@@ -1,0 +1,4 @@
+# config.php へのウェブアクセスを禁止
+<Files "config.php">
+    Require all denied
+</Files>
