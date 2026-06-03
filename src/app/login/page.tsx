@@ -39,7 +39,15 @@ function LoginForm() {
 
     if (error) {
       setStatus('error')
-      setErrMsg(error.message)
+      // Supabase のエラーメッセージを日本語に変換
+      const msg = error.message.toLowerCase()
+      if (msg.includes('rate limit') || msg.includes('too many')) {
+        setErrMsg('送信回数の上限に達しました。しばらく時間をおいてから再度お試しください。')
+      } else if (msg.includes('not found') || msg.includes('invalid') || msg.includes('signups not allowed')) {
+        setErrMsg('このメールアドレスは登録されていません。管理者にお問い合わせください。')
+      } else {
+        setErrMsg('送信に失敗しました。時間をおいて再度お試しください。')
+      }
     } else {
       setStatus('sent')
     }
@@ -106,7 +114,7 @@ function LoginForm() {
             </button>
 
             <p className="text-[11px] text-gray-400 text-center leading-relaxed">
-              パスワードは不要です。入力したメールアドレスに<br />
+              パスワードは不要です。登録済みのメールアドレスに<br />
               ログイン用リンクをお送りします。
             </p>
           </form>
