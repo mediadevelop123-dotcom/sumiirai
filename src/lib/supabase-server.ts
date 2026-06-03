@@ -9,7 +9,7 @@
  *   Promise を返すため、本ファイルの cookies() を await する必要がある。
  */
 
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export function createSupabaseServerClient() {
@@ -23,7 +23,7 @@ export function createSupabaseServerClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           // Server Component から呼ばれた場合は set が失敗するため握りつぶす
           // (セッション更新は middleware が担当)
           try {
