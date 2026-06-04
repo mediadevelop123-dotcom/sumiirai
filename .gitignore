@@ -38,3 +38,6 @@ sakura-demo/config.php
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*

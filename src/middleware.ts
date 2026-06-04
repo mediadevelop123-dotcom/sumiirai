@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
 
   // /chat は要ログイン (ページのみ。API は各 route で 401 を返す)
   const { pathname } = request.nextUrl
-  if (!user && pathname.startsWith('/chat')) {
+  if (!user && (pathname.startsWith('/chat') || pathname.startsWith('/admin') || pathname.startsWith('/account'))) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     loginUrl.searchParams.set('next', pathname)

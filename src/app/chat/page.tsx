@@ -601,10 +601,11 @@ export default function ChatPage() {
             ) : (() => {
               // サイドバー表示ルール:
               //   1. AIが回答内で言及した補助金 → 最上位（🎯バッジ付き）
-              //   2. source='static' の主要国補助金 → その下（類似度順）
-              //   3. jGrants/KDB地域補助金は言及された場合のみ表示
+              //   2. source='static' かつ類似度 >= 15% の主要国補助金 → その下（類似度順）
+              //   3. jGrants/KDB地域補助金・similarity < 15% の補助金は AI言及時のみ表示
+              const SIMILARITY_THRESHOLD = 0.15
               const sorted = [...latestSources]
-                .filter(s => mentionedIds.has(s.id) || s.source === 'static')
+                .filter(s => mentionedIds.has(s.id) || (s.source === 'static' && s.similarity >= SIMILARITY_THRESHOLD))
                 .sort((a, b) => {
                   const aMentioned = mentionedIds.has(a.id)
                   const bMentioned = mentionedIds.has(b.id)
