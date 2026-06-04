@@ -69,6 +69,8 @@ function openTunnel(): Promise<ReturnType<typeof spawn>> {
       '-i', sshKey,
       '-o', 'StrictHostKeyChecking=no',
       '-o', 'ExitOnForwardFailure=yes',
+      '-o', 'ServerAliveInterval=30',
+      '-o', 'ConnectTimeout=15',
       '-N',
       '-L', `${localPort}:${dbHost}:3306`,
       `${sshUser}@${sshHost}`,
@@ -81,8 +83,14 @@ function openTunnel(): Promise<ReturnType<typeof spawn>> {
 
     tunnel.on('error', reject)
 
-    // 2秒待ってトンネルが起動したとみなす
-    setTimeout(() => resolve(tunnel), 2000)
+    tunnel.on('exit', (code) => {
+      if (code !== null && code !== 0) {
+        reject(new Error(`SSH トンネルが異常終了しました (code: ${code})`))
+      }
+    })
+
+    // GitHub Actions runner では接続に時間がかかるため8秒待機
+    setTimeout(() => resolve(tunnel), 8000)
   })
 }
 
@@ -138,20 +146,38 @@ function buildEmbeddingText(r: KdbRecord, prefecture: string | null): string {
 
 async function fetchKdbRecords(localPort: string, table: string): Promise<KdbRecord[]> {
   const mysql2 = await import('mysql2/promise')
-  const conn = await mysql2.createConnection({
-    host:     'localhost',
-    port:     Number(localPort),
-    database: process.env.KDB_DATABASE,
-    user:     process.env.KDB_USER,
-    password: process.env.KDB_PASSWORD,
-    charset:  'utf8mb4',
-  })
 
-  const [rows] = await conn.execute(
-    `SELECT * FROM \`${table}\` WHERE review_status = 'ok'`
-  )
-  await conn.end()
-  return rows as KdbRecord[]
+  // SSHトンネルが完全に確立するまでリトライ（最大5回・2秒間隔）
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      console.log(`  MySQL接続試行 ${attempt}/5...`)
+      const conn = await mysql2.createConnection({
+        host:            'localhost',
+        port:            Number(localPort),
+        database:        process.env.KDB_DATABASE,
+        user:            process.env.KDB_USER,
+        password:        process.env.KDB_PASSWORD,
+        charset:         'utf8mb4',
+        connectTimeout:  10000,
+      })
+      const [rows] = await conn.execute(
+        `SELECT * FROM \`${table}\` WHERE review_status = 'ok'`
+      )
+      await conn.end()
+      return rows as KdbRecord[]
+    } catch (err) {
+      lastError = err
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT') {
+        console.log(`  接続失敗 (${code})、2秒後に再試行...`)
+        await new Promise(r => setTimeout(r, 2000))
+      } else {
+        throw err  // ECONNREFUSED以外は即リトライしない
+      }
+    }
+  }
+  throw lastError
 }
 
 // ─── メイン ──────────────────────────────────────────────────
