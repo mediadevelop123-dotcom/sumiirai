@@ -22,32 +22,72 @@ const MAX_PAGES     = 5     // 1キーワードあたり最大ページ数 (=最
 
 /**
  * 収集対象の業種とキーワード設定
- * aizoo-solo Phase 1: 飲食・理美容・小売 + 共通IT補助金
+ * 対面サービス業（飲食・宿泊・理美容・小売）向けに広くカバー
  */
 const SYNC_TARGETS = [
   {
     industry: '飲食業',
-    keywords: ['飲食', '飲食店', '食品衛生', '飲食業'],
+    keywords: ['飲食', '飲食店', '飲食業', '食品', '食品衛生', 'フードビジネス', '受動喫煙'],
+  },
+  {
+    industry: '宿泊業',
+    keywords: ['宿泊', 'ホテル', '旅館', '民泊', '観光', 'インバウンド'],
   },
   {
     industry: '理美容業',
-    keywords: ['美容', '理容', 'サロン', '理美容'],
+    keywords: ['美容', '理容', 'サロン', '理美容', 'エステ', 'ネイル'],
   },
   {
     industry: '小売業',
-    keywords: ['小売', '商店', '小売業'],
+    keywords: ['小売', '商店', '商店街', '販売', '物販'],
   },
   {
-    industry: '共通',
+    industry: '共通_IT',
     keywords: [
       'IT導入',          // IT導入補助金(超重要)
       'デジタル化',
       'DX',
-      'ホームページ',    // HP作成補助
+      'ホームページ',
       'POSシステム',
-      '小規模事業者',    // 小規模事業者持続化補助金
-      '省エネ',          // 省エネ設備導入
+      'キャッシュレス',
+      'EC',
+      'オンライン',
+    ],
+  },
+  {
+    industry: '共通_経営',
+    keywords: [
+      '小規模事業者',    // 小規模持続化補助金(超重要)
+      '持続化',
+      '販路開拓',        // 持続化補助金の目的
+      '中小企業',        // 幅広い中小企業向け補助金
+      '創業',
+      '事業承継',
+      '経営改善',
+      '人材育成',
+      '雇用',
+    ],
+  },
+  {
+    industry: '共通_設備',
+    keywords: [
+      '省エネ',
       '設備導入',
+      '脱炭素',
+      '再生可能エネルギー',
+      '太陽光',
+      '空調',
+    ],
+  },
+  {
+    industry: '共通_改装',
+    keywords: [
+      '内装',            // 店舗内装工事
+      '改装',            // 店舗改装全般
+      'リノベーション',
+      '店舗改修',
+      '改修',
+      'バリアフリー',    // 改修系補助金に多い
     ],
   },
 ]
@@ -137,7 +177,7 @@ function buildEmbeddingText(s: {
   return [
     `補助金名: ${s.title}`,
     s.catch_phrase  && `概要: ${s.catch_phrase}`,
-    s.description   && `内容: ${s.description}`,
+    s.description   && `内容: ${s.description.slice(0, 2000)}`,
     s.target        && `対象・用途: ${s.target}`,
     s.industry      && `業種: ${s.industry}`,
     s.prefecture    && `地域: ${s.prefecture}`,
@@ -198,6 +238,7 @@ async function main() {
     const { error } = await supabase
       .from('subsidies')
       .update({ is_active: false })
+      .eq('source', 'jgrants')
       .not('external_id', 'in', `(${ids})`)
       .not('external_id', 'is', null)
 

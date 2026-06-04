@@ -1,0 +1,59 @@
+name: Sync KDB Subsidies Weekly
+
+on:
+  schedule:
+    # 毎週月曜日 JST 12:00 (UTC 03:00) — jGrants sync(11:00)の1時間後
+    - cron: '0 3 * * 1'
+  # 手動実行ボタン
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # SSH鍵をファイルに書き出す（chmod 600 必須）
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.KDB_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519_kdb
+          chmod 600 ~/.ssh/id_ed25519_kdb
+          ssh-keyscan -H test-mp.sakura.ne.jp >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run KDB subsidy sync
+        run: npx tsx scripts/sync-kdb.ts
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LLM_PROVIDER:              bedrock
+          AWS_REGION:                ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID:         ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY:     ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          KDB_SSH_HOST:              test-mp.sakura.ne.jp
+          KDB_SSH_USER:              test-mp
+          KDB_SSH_KEY:               /home/runner/.ssh/id_ed25519_kdb
+          KDB_DB_HOST:               mysql80.mediapartners.sakura.ne.jp
+          KDB_DATABASE:              mediapartners_municipality
+          KDB_USER:                  ${{ secrets.KDB_USER }}
+          KDB_PASSWORD:              ${{ secrets.KDB_PASSWORD }}
+          KDB_TABLE:                 subsidy_applications
+          KDB_LOCAL_PORT:            '13306'
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -X POST "${{ secrets.LARK_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{"msg_type":"text","content":{"text":"❌ KDB補助金同期失敗\nログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}'
+        continue-on-error: true
