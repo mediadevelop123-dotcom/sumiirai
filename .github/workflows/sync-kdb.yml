@@ -23,13 +23,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # SSH鍵をファイルに書き出す（chmod 600 必須）
+      # SSH鍵をファイルに書き出す（CRLF除去・chmod 600 必須）
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.KDB_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519_kdb
+          # printf を使い CRLF を含まない形で書き出す
+          printf '%s' "${{ secrets.KDB_SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519_kdb
+          # 末尾改行を確保（SSH鍵はLFで終わる必要がある）
+          echo "" >> ~/.ssh/id_ed25519_kdb
           chmod 600 ~/.ssh/id_ed25519_kdb
           ssh-keyscan -H test-mp.sakura.ne.jp >> ~/.ssh/known_hosts 2>/dev/null
+          # 鍵のフォーマット確認
+          echo "--- SSH key check ---"
+          head -1 ~/.ssh/id_ed25519_kdb
+          wc -l ~/.ssh/id_ed25519_kdb
+
+      # SSH接続テスト（詳細ログ付き）
+      - name: Test SSH connection
+        run: |
+          ssh -v -i ~/.ssh/id_ed25519_kdb \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -o BatchMode=yes \
+            test-mp@test-mp.sakura.ne.jp \
+            "echo SSH_OK" 2>&1 || echo "SSH test exit: $?"
 
       - name: Run KDB subsidy sync
         run: npx tsx scripts/sync-kdb.ts
