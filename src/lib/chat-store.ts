@@ -127,19 +127,27 @@ export async function getMessages(
   sessionId: string,
   userId: string
 ): Promise<ChatMessage[]> {
-  // 所有者チェック (他人のセッションIDを渡されても漏らさない)
-  const session = await getSession(sessionId, userId)
-  if (!session) return []
-
+  // 所有者チェックとメッセージ取得を並列実行（直列2往復 → 1往復相当）
   const supabase = getServiceClient()
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('created_at', { ascending: true })
+  const [sessionResult, messagesResult] = await Promise.all([
+    supabase
+      .from('chat_sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true }),
+  ])
 
-  if (error) throw new Error(`CHAT_007: メッセージ取得失敗 — ${error.message}`)
-  return (data ?? []) as ChatMessage[]
+  // 所有者チェック失敗 → 空配列を返す（他人のセッションIDでも情報を漏らさない）
+  if (!sessionResult.data) return []
+
+  if (messagesResult.error) throw new Error(`CHAT_007: メッセージ取得失敗 — ${messagesResult.error.message}`)
+  return (messagesResult.data ?? []) as ChatMessage[]
 }
 
 export async function addMessage(params: {

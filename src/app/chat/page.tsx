@@ -136,6 +136,7 @@ export default function ChatPage() {
   // 履歴サイドバー状態
   const [sessions, setSessions]           = useState<ChatSession[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
+  const [sessionLoading, setSessionLoading]   = useState(false)  // 過去セッション読み込み中
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen]     = useState(false)  // モバイル用
 
@@ -193,8 +194,15 @@ export default function ChatPage() {
   // ── 過去セッションを読み込む ──────────────────────────────
 
   const loadSession = useCallback(async (sessionId: string) => {
-    if (loading) return
+    if (loading || sessionLoading) return
     setHistoryOpen(false)  // モバイルではサイドバーを閉じる
+
+    // ── 即時フィードバック: クリックした瞬間にハイライト＆スピナー ──
+    setActiveSessionId(sessionId)
+    setSessionLoading(true)
+    setMessages([])
+    setLatestSources([])
+    setMentionedIds(new Set())
 
     try {
       const res = await fetch(`/api/v1/sessions/${sessionId}/messages`)
@@ -206,17 +214,16 @@ export default function ChatPage() {
 
       setMessages(uiMessages)
       sessionIdRef.current = sessionId
-      setActiveSessionId(sessionId)
-      setLatestSources([])
-      setMentionedIds(new Set())
 
       // 最新のアシスタントメッセージのsourcesをサイドバーに反映
       const lastAssistant = [...uiMessages].reverse().find(m => m.role === 'assistant')
       if (lastAssistant?.sources) setLatestSources(lastAssistant.sources)
     } catch {
       // ignore
+    } finally {
+      setSessionLoading(false)
     }
-  }, [loading])
+  }, [loading, sessionLoading])
 
   // ── セッション削除 ────────────────────────────────────────
 
@@ -537,8 +544,16 @@ export default function ChatPage() {
               </div>
             )}
 
+            {/* 過去セッション読み込みスピナー */}
+            {sessionLoading && (
+              <div className="flex flex-col items-center justify-center h-40 gap-3 text-gray-400">
+                <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+                <p className="text-xs">履歴を読み込んでいます…</p>
+              </div>
+            )}
+
             {/* メッセージ一覧 */}
-            {messages.map(msg => (
+            {!sessionLoading && messages.map(msg => (
               <ChatBubble
                 key={msg.id}
                 message={msg}
