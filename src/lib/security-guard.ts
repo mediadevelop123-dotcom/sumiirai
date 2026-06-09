@@ -97,6 +97,17 @@ const HALLUCINATION_HINT_PATTERNS: RegExp[] = [
   /(データベース|弊サービスのデータ|弊サービスの情報).{0,30}(反映されていない|登録されていない|追いついていない|遅れている)/,
   // 「最近新設・変更された可能性」という示唆
   /(最近|新たに|新しく).{0,10}(新設|設立|制定|変更|追加).{0,20}(可能性|かもしれ)/,
+
+  // ── 英語版パターン ──────────────────────────────────────────
+  // 「確認できないが最近のプログラムかもしれない」（英語での存在示唆）
+  // ※ "It could be a very recent program not yet in our system" などの表現を検知
+  /not yet in our (system|database|records?)/i,
+  /(could be|might be).{0,10}(very recent|recent|new).{0,10}(program|subsidy|initiative|grant)/i,
+  // 「名前が違うかもしれない」（英語での名前バリエーション示唆）
+  // ※ "It might be known by a different official title" などの表現を検知
+  /might be known by.{0,20}(different|another).{0,20}(name|title)/i,
+  // 「データに登録されていないが存在する可能性」（英語版の構造的存在示唆）
+  /(cannot confirm|not in our|not found).{0,50}(might (exist|be)|could (exist|be)|possible)/i,
 ]
 
 /**

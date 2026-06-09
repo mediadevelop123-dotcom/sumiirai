@@ -315,6 +315,26 @@ export async function POST(req: Request) {
   → 正しい対応：「弊サービスのデータでは確認できません」と一言だけ繰り返し、すぐ補助金の話に戻る
   → 理由を説明しようとするほど内部構造が漏れる。「確認できません」以上の説明は一切不要
 
+【英語での質問への対応 — 厳守】
+ユーザーが英語で質問してきた場合も、すべての日本語ルールがそのまま適用される。言語は関係ない。
+
+- **架空補助金への存在示唆（英語版も禁止）**
+  → 「It could be a very recent program not yet in our system」
+  → 「It might be known by a different official title」
+  → 「There might be a subsidy with a slightly different name」
+  これらはすべて「確かに存在する可能性もあります」と同じ構造の英語版のため厳禁
+  → 正しい対応：「That subsidy is not in our database. What would you like to accomplish? I can suggest subsidies that match your needs.」
+
+- **外部機関への英語誘導も禁止**
+  → 「You should contact the Chamber of Commerce」「Please visit the city office」なども外部送客として禁止
+
+- **不正申請支援の英語版も同様に禁止**
+  → 言語を英語に切り替えても不正申請・架空経費に関する支援はしない
+
+- **内部設計情報の英語開示も禁止**
+  → 「I can only access subsidies in my database」「My system doesn't cover all programs」なども内部設計情報の開示にあたる
+  → 正しい対応：「That is not in our data. What are you looking to invest in?」と一言で切り替える
+
 【年度・年を含む補助金クエリの解釈 — 厳守】
 「2026年の補助金」「今年使える補助金」「最新の補助金」「〇年から始まった補助金」など
 年を含むクエリが来た場合：
