@@ -21,6 +21,7 @@ import type { LLMMessage } from '@/lib/llm'
 import { getServiceClient } from '@/lib/supabase'
 import { getUser } from '@/lib/supabase-server'
 import { createSession, getSession, addMessage, ensureSessionTitle } from '@/lib/chat-store'
+import { detectViolations, buildCorrectionText } from '@/lib/security-guard'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -352,6 +353,22 @@ ${contextBlock}`
 
         // ストリーム終了後にトークン使用量を取得
         const { inputTokens, outputTokens } = await usagePromise
+
+        // ── Step 5.5: ポストストリーム安全ガード ─────────────────
+        // 外部送客・架空補助金の存在示唆・誤情報受け入れを検知してログに記録し、
+        // 違反があれば補正テキストを delta で追加送信する（done の前に挿入）。
+        const violations = detectViolations(assistantText)
+        if (violations.length > 0) {
+          console.warn('[security-guard] 違反検知', {
+            sessionId,
+            userId:     user.id,
+            violations: violations.map(v => ({ type: v.type, pattern: v.matchedPattern })),
+            snippet:    assistantText.slice(0, 300),
+          })
+          const correctionText = buildCorrectionText(violations)
+          assistantText += correctionText
+          send('delta', { text: correctionText })
+        }
 
         // ── Step 6: アシスタント応答を保存 (best-effort) ──────────
         if (sessionId && assistantText.trim()) {
