@@ -14,7 +14,7 @@ import AdminHeader from '@/components/admin-header'
 
 // ─── 型定義 ───────────────────────────────────────────────────
 type AdminRole = 'super_admin' | 'org_admin'
-type Tab = 'orgs' | 'link' | 'bulk' | 'usage'
+type Tab = 'users' | 'orgs' | 'link' | 'bulk' | 'usage'
 
 interface Org {
   id:        string
@@ -49,6 +49,17 @@ interface BulkResult {
   email:   string
   status:  'ok' | 'already' | 'error'
   message: string
+}
+
+interface UserRow {
+  id:           string
+  email:        string
+  role:         string
+  orgId:        string | null
+  orgName:      string | null
+  sessionCount: number
+  lastActive:   string | null
+  createdAt:    string
 }
 
 // ─── API ヘルパー ──────────────────────────────────────────────
@@ -90,6 +101,323 @@ async function callInviteApi(params: {
   })
   const data = await res.json()
   return { ok: res.ok, status: res.status, data }
+}
+
+// ─── ユーザー管理タブ ─────────────────────────────────────────
+function UsersTab({ ctx }: { ctx: AdminCtx }) {
+  const [users,   setUsers]   = useState<UserRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search,  setSearch]  = useState('')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [updating, setUpdating]     = useState<string | null>(null)  // 更新中の userId
+
+  const isSuperAdmin = ctx.role === 'super_admin'
+
+  // ── 一覧取得 ────────────────────────────────────────────────
+  useEffect(() => {
+    setLoading(true)
+    fetch('/api/v1/admin/users')
+      .then(r => r.json())
+      .then(d => { setUsers(d.users ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  // ── ロール変更 ───────────────────────────────────────────────
+  async function changeRole(userId: string, newRole: string) {
+    setUpdating(userId)
+    const res = await fetch(`/api/v1/admin/users/${userId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ role: newRole }),
+    })
+    if (res.ok) {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+    } else {
+      alert('ロール変更に失敗しました')
+    }
+    setUpdating(null)
+  }
+
+  // ── 会社移動（super_admin のみ）────────────────────────────
+  async function changeOrg(userId: string, newOrgId: string | null) {
+    setUpdating(userId)
+    const res = await fetch(`/api/v1/admin/users/${userId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ orgId: newOrgId }),
+    })
+    if (res.ok) {
+      const orgName = newOrgId
+        ? (ctx.orgs.find(o => o.id === newOrgId)?.name ?? null)
+        : null
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, orgId: newOrgId, orgName } : u
+      ))
+    } else {
+      alert('会社移動に失敗しました')
+    }
+    setUpdating(null)
+  }
+
+  // ── 組織から除外 ─────────────────────────────────────────────
+  async function removeFromOrg(userId: string, email: string) {
+    if (!confirm(`「${email}」を組織から除外しますか？\nユーザーはログインできなくなります。`)) return
+    setUpdating(userId)
+    const res = await fetch(`/api/v1/admin/users/${userId}`, { method: 'DELETE' })
+    if (res.ok) {
+      setUsers(prev => isSuperAdmin
+        ? prev.map(u => u.id === userId ? { ...u, orgId: null, orgName: null, role: 'member' } : u)
+        : prev.filter(u => u.id !== userId)
+      )
+    } else {
+      alert('除外に失敗しました')
+    }
+    setUpdating(null)
+  }
+
+  // ── フィルタリング ───────────────────────────────────────────
+  const filtered = users.filter(u => {
+    const matchSearch = !search || u.email.toLowerCase().includes(search.toLowerCase())
+    const matchRole   = roleFilter === 'all' || u.role === roleFilter
+    return matchSearch && matchRole
+  })
+
+  // ── 日時フォーマット ─────────────────────────────────────────
+  function fmtDate(iso: string | null) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    const now = new Date()
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000)
+    if (diffDays === 0) return `今日 ${d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`
+    if (diffDays === 1) return '昨日'
+    if (diffDays < 7)  return `${diffDays}日前`
+    return d.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })
+  }
+
+  function fmtJoined(iso: string) {
+    return new Date(iso).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })
+  }
+
+  // ── ロールバッジ ─────────────────────────────────────────────
+  function RoleBadge({ role }: { role: string }) {
+    const cfg: Record<string, { label: string; cls: string }> = {
+      super_admin: { label: '👑 スーパー管理者', cls: 'bg-purple-100 text-purple-700 border-purple-200' },
+      org_admin:   { label: '🏢 会社管理者',     cls: 'bg-blue-100 text-blue-700 border-blue-200' },
+      member:      { label: '👤 メンバー',        cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+    }
+    const { label, cls } = cfg[role] ?? { label: role, cls: 'bg-gray-100 text-gray-500 border-gray-200' }
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${cls}`}>
+        {label}
+      </span>
+    )
+  }
+
+  // ── ロール選択肢 ─────────────────────────────────────────────
+  function availableRoles(currentRole: string): string[] {
+    if (isSuperAdmin) return ['member', 'org_admin', 'super_admin']
+    if (currentRole === 'super_admin') return []  // org_admin は super_admin を変更不可
+    return ['member', 'org_admin']
+  }
+
+  const ROLE_LABELS: Record<string, string> = {
+    super_admin: '👑 スーパー管理者',
+    org_admin:   '🏢 会社管理者',
+    member:      '👤 メンバー',
+  }
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── 統計バー ── */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-gray-50 rounded-xl px-3 py-2.5 text-center">
+          <p className="text-xl font-bold text-gray-800">{users.length}</p>
+          <p className="text-[11px] text-gray-500">総ユーザー</p>
+        </div>
+        <div className="bg-blue-50 rounded-xl px-3 py-2.5 text-center">
+          <p className="text-xl font-bold text-blue-700">
+            {users.filter(u => u.role === 'org_admin').length}
+          </p>
+          <p className="text-[11px] text-blue-500">会社管理者</p>
+        </div>
+        <div className="bg-green-50 rounded-xl px-3 py-2.5 text-center">
+          <p className="text-xl font-bold text-green-700">
+            {users.filter(u => {
+              if (!u.lastActive) return false
+              return (Date.now() - new Date(u.lastActive).getTime()) < 7 * 86_400_000
+            }).length}
+          </p>
+          <p className="text-[11px] text-green-500">週間アクティブ</p>
+        </div>
+      </div>
+
+      {/* ── 検索 + フィルタ ── */}
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[160px]">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"
+               fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="メールで検索…"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg
+                       focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <select
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value)}
+          className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="all">全ロール</option>
+          <option value="super_admin">スーパー管理者</option>
+          <option value="org_admin">会社管理者</option>
+          <option value="member">メンバー</option>
+        </select>
+      </div>
+
+      {/* ── ユーザーテーブル ── */}
+      {loading ? (
+        <div className="text-center py-10 text-gray-400">
+          <span className="inline-block w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs mt-2">読み込み中…</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-10 text-gray-400">
+          <p className="text-2xl mb-2">👤</p>
+          <p className="text-sm">該当ユーザーがいません</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="bg-gray-50 text-xs text-gray-500 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-4 py-2.5">ユーザー</th>
+                <th className="text-left px-4 py-2.5">ロール</th>
+                {isSuperAdmin && <th className="text-left px-4 py-2.5">会社</th>}
+                <th className="text-right px-4 py-2.5">利用</th>
+                <th className="text-right px-4 py-2.5">最終利用</th>
+                <th className="text-right px-4 py-2.5">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map(u => {
+                const isMe     = u.email === ctx.email
+                const isUpdating = updating === u.id
+                const roleOpts = availableRoles(u.role)
+
+                return (
+                  <tr key={u.id} className={`bg-white hover:bg-gray-50 transition-colors ${isMe ? 'bg-blue-50/30' : ''}`}>
+
+                    {/* メール + 登録日 */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-purple-500
+                                        flex items-center justify-center text-white text-xs font-bold shrink-0 select-none">
+                          {u.email[0]?.toUpperCase() ?? '?'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate max-w-[160px]">
+                            {u.email}
+                            {isMe && <span className="ml-1.5 text-[10px] text-blue-500 font-normal">（自分）</span>}
+                          </p>
+                          <p className="text-[11px] text-gray-400">{fmtJoined(u.createdAt)} 登録</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* ロール（変更可能な場合はドロップダウン）*/}
+                    <td className="px-4 py-3">
+                      {roleOpts.length > 1 && !isMe ? (
+                        <select
+                          value={u.role}
+                          onChange={e => changeRole(u.id, e.target.value)}
+                          disabled={isUpdating}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1
+                                     focus:outline-none focus:ring-2 focus:ring-blue-500
+                                     bg-white disabled:opacity-60 cursor-pointer"
+                        >
+                          {roleOpts.map(r => (
+                            <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <RoleBadge role={u.role} />
+                      )}
+                    </td>
+
+                    {/* 会社（super_admin のみ表示・変更可）*/}
+                    {isSuperAdmin && (
+                      <td className="px-4 py-3">
+                        <select
+                          value={u.orgId ?? ''}
+                          onChange={e => changeOrg(u.id, e.target.value || null)}
+                          disabled={isUpdating || u.role === 'super_admin'}
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-1
+                                     focus:outline-none focus:ring-2 focus:ring-blue-500
+                                     bg-white disabled:opacity-50 max-w-[120px] truncate cursor-pointer"
+                        >
+                          <option value="">— 未所属 —</option>
+                          {ctx.orgs.map(o => (
+                            <option key={o.id} value={o.id}>{o.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
+
+                    {/* セッション数 */}
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-sm font-mono text-gray-700">
+                        {u.sessionCount > 0 ? u.sessionCount : '—'}
+                      </span>
+                    </td>
+
+                    {/* 最終利用 */}
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {fmtDate(u.lastActive)}
+                      </span>
+                    </td>
+
+                    {/* アクション */}
+                    <td className="px-4 py-3 text-right">
+                      {!isMe && u.orgId && (
+                        <button
+                          onClick={() => removeFromOrg(u.id, u.email)}
+                          disabled={isUpdating}
+                          className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50
+                                     px-2 py-1 rounded-lg transition-colors disabled:opacity-40
+                                     whitespace-nowrap"
+                          title="組織から除外"
+                        >
+                          {isUpdating ? (
+                            <span className="inline-block w-3 h-3 border border-red-400 border-t-transparent rounded-full animate-spin" />
+                          ) : '除外'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 件数 */}
+      {!loading && (
+        <p className="text-xs text-gray-400 text-right">
+          {filtered.length} / {users.length} 件表示
+        </p>
+      )}
+    </div>
+  )
 }
 
 // ─── 使用量タブ ───────────────────────────────────────────────
@@ -664,8 +992,8 @@ export default function AdminInvitePage() {
         setDenied(true)
       } else {
         setCtx(result)
-        // super_admin はデフォルトで会社管理タブ
-        if (result.role === 'super_admin') setTab('orgs')
+        // デフォルトはユーザー管理タブ
+        setTab('users')
       }
       setLoading(false)
     })
@@ -701,6 +1029,7 @@ export default function AdminInvitePage() {
   }
 
   const tabs = [
+    { key: 'users' as Tab, label: '👥 ユーザー' },
     ...(ctx.role === 'super_admin' ? [{ key: 'orgs' as Tab, label: '🏢 会社管理' }] : []),
     { key: 'link'  as Tab, label: '🔗 招待' },
     { key: 'bulk'  as Tab, label: '📋 一括登録' },
@@ -750,6 +1079,7 @@ export default function AdminInvitePage() {
 
             {/* コンテンツ */}
             <div className="p-6">
+              {tab === 'users' && <UsersTab ctx={ctx} />}
               {tab === 'orgs' && ctx.role === 'super_admin' && (
                 <OrgsTab orgs={ctx.orgs} onCreated={handleOrgCreated} />
               )}
