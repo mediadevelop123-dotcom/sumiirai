@@ -3,13 +3,14 @@
 /**
  * /admin/invite — 管理者ハブ (Phase 2)
  *
- * super_admin: 🏢 会社管理 / 🔗 招待リンク / 📋 一括登録
- * org_admin  :                🔗 招待リンク / 📋 一括登録
+ * super_admin: 🏢 会社管理 / 🔗 招待リンク / 📋 一括登録 / 📊 使用量
+ * org_admin  :               🔗 招待リンク / 📋 一括登録 / 📊 使用量
  *
  * 会社選択は super_admin のみ（org_admin は自社固定）
  */
 
 import { useState, useEffect, useRef } from 'react'
+import AdminHeader from '@/components/admin-header'
 
 // ─── 型定義 ───────────────────────────────────────────────────
 type AdminRole = 'super_admin' | 'org_admin'
@@ -25,9 +26,11 @@ interface Org {
 }
 
 interface AdminCtx {
-  role:  AdminRole
-  orgId: string | null
-  orgs:  Org[]
+  role:    AdminRole
+  orgId:   string | null
+  orgName: string | null
+  email:   string | null
+  orgs:    Org[]
 }
 
 type UsageRange = 'today' | 'week' | 'month' | 'all'
@@ -65,7 +68,13 @@ async function fetchAdminCtx(): Promise<AdminCtx | null> {
     }
   }
 
-  return { role: profile.role, orgId: profile.orgId, orgs }
+  return {
+    role:    profile.role,
+    orgId:   profile.orgId,
+    orgName: profile.orgName ?? null,
+    email:   profile.email   ?? null,
+    orgs,
+  }
 }
 
 async function callInviteApi(params: {
@@ -669,7 +678,10 @@ export default function AdminInvitePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-sm text-gray-400">読み込み中…</p>
+        <div className="text-center space-y-2">
+          <span className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-400">読み込み中…</p>
+        </div>
       </div>
     )
   }
@@ -677,64 +689,90 @@ export default function AdminInvitePage() {
   if (denied || !ctx) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-sm text-red-500">アクセス権限がありません</p>
+        <div className="text-center space-y-3">
+          <p className="text-3xl">🔒</p>
+          <p className="text-sm text-red-500 font-medium">アクセス権限がありません</p>
+          <a href="/chat" className="text-xs text-blue-500 hover:underline">
+            チャットに戻る
+          </a>
+        </div>
       </div>
     )
   }
 
   const tabs = [
     ...(ctx.role === 'super_admin' ? [{ key: 'orgs' as Tab, label: '🏢 会社管理' }] : []),
-    { key: 'link'  as Tab, label: '🔗 招待リンク' },
+    { key: 'link'  as Tab, label: '🔗 招待' },
     { key: 'bulk'  as Tab, label: '📋 一括登録' },
     { key: 'usage' as Tab, label: '📊 使用量' },
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center pt-12 px-4">
-      <div className="w-full max-w-lg space-y-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
 
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">管理者ページ</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {ctx.role === 'super_admin' ? 'スーパー管理者' : '会社管理者'}
+      {/* ── ヘッダー ── */}
+      <AdminHeader
+        role={ctx.role}
+        orgName={ctx.orgName}
+        email={ctx.email}
+      />
+
+      {/* ── メインコンテンツ ── */}
+      <main className="flex-1 flex items-start justify-center py-8 px-4">
+        <div className="w-full max-w-2xl space-y-5">
+
+          {/* ページタイトル（スマホのみ — PC はヘッダーで表示済み） */}
+          <div className="sm:hidden">
+            <p className="text-xs text-gray-400">
+              {ctx.role === 'super_admin' ? '👑 スーパー管理者' : `🏢 ${ctx.orgName ?? '会社管理者'}`}
+            </p>
+          </div>
+
+          {/* ── タブカード ── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+
+            {/* タブ */}
+            <div className="flex border-b border-gray-200 overflow-x-auto">
+              {tabs.map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`flex-1 min-w-[80px] py-3 px-2 text-sm font-medium transition-colors whitespace-nowrap
+                    ${tab === t.key
+                      ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/40'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* コンテンツ */}
+            <div className="p-6">
+              {tab === 'orgs' && ctx.role === 'super_admin' && (
+                <OrgsTab orgs={ctx.orgs} onCreated={handleOrgCreated} />
+              )}
+              {tab === 'link'  && <LinkTab ctx={ctx} />}
+              {tab === 'bulk'  && <BulkTab ctx={ctx} />}
+              {tab === 'usage' && <UsageTab />}
+            </div>
+          </div>
+
+          {/* フッター注記 */}
+          <p className="text-xs text-gray-400 text-center pb-4">
+            登録済みユーザーは{' '}
+            <a
+              href="https://sumiirai.vercel.app/login"
+              className="underline hover:text-gray-600"
+              target="_blank" rel="noopener noreferrer"
+            >
+              sumiirai.vercel.app/login
+            </a>
+            {' '}からログインできます。
           </p>
         </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* タブ */}
-          <div className="flex border-b border-gray-200">
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`flex-1 py-3 text-sm font-medium transition-colors
-                  ${tab === t.key
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/40'
-                    : 'text-gray-500 hover:text-gray-700'
-                  }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* コンテンツ */}
-          <div className="p-6">
-            {tab === 'orgs' && ctx.role === 'super_admin' && (
-              <OrgsTab orgs={ctx.orgs} onCreated={handleOrgCreated} />
-            )}
-            {tab === 'link'  && <LinkTab ctx={ctx} />}
-            {tab === 'bulk'  && <BulkTab ctx={ctx} />}
-            {tab === 'usage' && <UsageTab />}
-          </div>
-        </div>
-
-        <p className="text-xs text-gray-400 text-center">
-          登録済みユーザーは{' '}
-          <code className="bg-gray-100 px-1 rounded">https://sumiirai.vercel.app/login</code>{' '}
-          からログインできます。
-        </p>
-      </div>
+      </main>
     </div>
   )
 }

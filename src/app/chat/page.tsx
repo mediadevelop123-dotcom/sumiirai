@@ -132,6 +132,7 @@ export default function ChatPage() {
   const [loading, setLoading]             = useState(false)
   const [latestSources, setLatestSources] = useState<Subsidy[]>([])
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
+  const [isAdmin, setIsAdmin]             = useState(false)
 
   // 履歴サイドバー状態
   const [sessions, setSessions]           = useState<ChatSession[]>([])
@@ -164,17 +165,25 @@ export default function ChatPage() {
     }
   }, [router])
 
-  // 初回マウント: セッション一覧のみ取得（新規チャット状態で開始）
+  // 初回マウント: セッション一覧取得 + 管理者チェック（並行）
   useEffect(() => {
     let cancelled = false
 
     const init = async () => {
       try {
-        const res = await fetch('/api/v1/sessions')
-        if (!res.ok || cancelled) return
-        const data: ChatSession[] = await res.json()
+        const [sessRes, adminRes] = await Promise.all([
+          fetch('/api/v1/sessions'),
+          fetch('/api/v1/admin/me'),
+        ])
         if (cancelled) return
-        setSessions(data)
+        if (sessRes.ok) {
+          const data: ChatSession[] = await sessRes.json()
+          if (!cancelled) setSessions(data)
+        } else if (sessRes.status === 401) {
+          router.push('/login?next=/chat')
+          return
+        }
+        if (adminRes.ok) setIsAdmin(true)
       } catch {
         // ignore
       } finally {
@@ -436,6 +445,24 @@ export default function ChatPage() {
             title="会話をリセット"
           >
             🗑 クリア
+          </button>
+        )}
+
+        {/* 管理者のみ: 管理画面リンク */}
+        {isAdmin && (
+          <button
+            onClick={() => router.push('/admin/invite')}
+            className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800
+                       transition-colors px-2 py-1 rounded-lg hover:bg-purple-50 whitespace-nowrap
+                       border border-purple-200 hover:border-purple-300"
+            title="管理コンソール"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="hidden sm:inline">管理</span>
           </button>
         )}
 
