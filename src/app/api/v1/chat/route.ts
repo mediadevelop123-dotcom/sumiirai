@@ -130,9 +130,17 @@ export async function POST(req: Request) {
             sessionId = existing?.id ?? null
           }
           if (!sessionId) {
+            // ユーザーの所属会社 (org_id) を取得して使用量集計に紐付ける
+            const { data: profile } = await getServiceClient()
+              .from('user_profiles')
+              .select('org_id')
+              .eq('user_id', user.id)
+              .maybeSingle()
+
             const created = await createSession({
               userId:     user.id,
               prefecture: prefecture ?? null,
+              orgId:      profile?.org_id ?? null,
             })
             sessionId = created.id
           }

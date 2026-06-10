@@ -23,6 +23,7 @@ export async function createSession(params: {
   title?:      string | null
   prefecture?: string | null
   industry?:   string | null
+  orgId?:      string | null
 }): Promise<ChatSession> {
   const supabase = getServiceClient()
   const { data, error } = await supabase
@@ -32,6 +33,7 @@ export async function createSession(params: {
       title:      params.title ?? null,
       prefecture: params.prefecture ?? null,
       industry:   params.industry ?? null,
+      org_id:     params.orgId ?? null,
     })
     .select()
     .single()

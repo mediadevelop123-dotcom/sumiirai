@@ -13,7 +13,7 @@ import { useState, useEffect, useRef } from 'react'
 
 // ─── 型定義 ───────────────────────────────────────────────────
 type AdminRole = 'super_admin' | 'org_admin'
-type Tab = 'orgs' | 'link' | 'bulk'
+type Tab = 'orgs' | 'link' | 'bulk' | 'usage'
 
 interface Org {
   id:        string
@@ -28,6 +28,18 @@ interface AdminCtx {
   role:  AdminRole
   orgId: string | null
   orgs:  Org[]
+}
+
+type UsageRange = 'today' | 'week' | 'month' | 'all'
+
+interface UsageStat {
+  id:           string
+  name:         string
+  slug:         string
+  plan:         string
+  sessionCount: number
+  msgCount:     number
+  lastActive:   string | null
 }
 
 interface BulkResult {
@@ -69,6 +81,111 @@ async function callInviteApi(params: {
   })
   const data = await res.json()
   return { ok: res.ok, status: res.status, data }
+}
+
+// ─── 使用量タブ ───────────────────────────────────────────────
+function UsageTab() {
+  const [range,   setRange]   = useState<UsageRange>('month')
+  const [stats,   setStats]   = useState<UsageStat[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(`/api/v1/admin/usage?range=${range}`)
+      .then(r => r.json())
+      .then(d => { setStats(d.usage ?? []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [range])
+
+  const RANGE_LABELS: Record<UsageRange, string> = {
+    today: '今日',
+    week:  '過去7日',
+    month: '過去30日',
+    all:   '全期間',
+  }
+
+  function fmtDate(iso: string | null) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  }
+
+  const totalSessions = stats.reduce((s, r) => s + r.sessionCount, 0)
+  const totalMsgs     = stats.reduce((s, r) => s + r.msgCount, 0)
+
+  return (
+    <div className="space-y-4">
+      {/* 期間セレクター */}
+      <div className="flex gap-1">
+        {(Object.keys(RANGE_LABELS) as UsageRange[]).map(r => (
+          <button
+            key={r}
+            onClick={() => setRange(r)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+              ${range === r
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+          >
+            {RANGE_LABELS[r]}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-400 py-4 text-center">読み込み中…</p>
+      ) : stats.length === 0 ? (
+        <p className="text-sm text-gray-400 py-4 text-center">データがありません</p>
+      ) : (
+        <>
+          {/* サマリー */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-blue-50 rounded-xl px-4 py-3">
+              <p className="text-xs text-blue-600 font-medium">総セッション数</p>
+              <p className="text-2xl font-bold text-blue-700 mt-0.5">{totalSessions.toLocaleString()}</p>
+            </div>
+            <div className="bg-green-50 rounded-xl px-4 py-3">
+              <p className="text-xs text-green-600 font-medium">総質問数</p>
+              <p className="text-2xl font-bold text-green-700 mt-0.5">{totalMsgs.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {/* 会社別テーブル */}
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500">
+                <tr>
+                  <th className="text-left px-4 py-2">会社名</th>
+                  <th className="text-right px-4 py-2">セッション</th>
+                  <th className="text-right px-4 py-2">質問数</th>
+                  <th className="text-right px-4 py-2">最終利用</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {stats.map(s => (
+                  <tr key={s.id} className="bg-white hover:bg-gray-50">
+                    <td className="px-4 py-2.5">
+                      <p className="font-medium text-gray-800">{s.name}</p>
+                      <p className="text-xs text-gray-400">{s.plan}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 font-mono">
+                      {s.sessionCount}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-700 font-mono">
+                      {s.msgCount}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs text-gray-500">
+                      {fmtDate(s.lastActive)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 // ─── 会社管理タブ（super_admin 専用）─────────────────────────
@@ -567,8 +684,9 @@ export default function AdminInvitePage() {
 
   const tabs = [
     ...(ctx.role === 'super_admin' ? [{ key: 'orgs' as Tab, label: '🏢 会社管理' }] : []),
-    { key: 'link' as Tab, label: '🔗 招待リンク' },
-    { key: 'bulk' as Tab, label: '📋 一括登録' },
+    { key: 'link'  as Tab, label: '🔗 招待リンク' },
+    { key: 'bulk'  as Tab, label: '📋 一括登録' },
+    { key: 'usage' as Tab, label: '📊 使用量' },
   ]
 
   return (
@@ -605,8 +723,9 @@ export default function AdminInvitePage() {
             {tab === 'orgs' && ctx.role === 'super_admin' && (
               <OrgsTab orgs={ctx.orgs} onCreated={handleOrgCreated} />
             )}
-            {tab === 'link' && <LinkTab ctx={ctx} />}
-            {tab === 'bulk' && <BulkTab ctx={ctx} />}
+            {tab === 'link'  && <LinkTab ctx={ctx} />}
+            {tab === 'bulk'  && <BulkTab ctx={ctx} />}
+            {tab === 'usage' && <UsageTab />}
           </div>
         </div>
 
