@@ -214,6 +214,9 @@ export async function chatStream(
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role, content: m.content }))
 
+  // Opus 4.7以降は temperature が廃止されているため除外
+  const supportsTemperature = modelId !== 'bedrock-claude-opus-4-8'
+
   const res = await client.send(new InvokeModelWithResponseStreamCommand({
     modelId:     getBedrockModelId(modelId),
     contentType: 'application/json',
@@ -221,7 +224,7 @@ export async function chatStream(
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens:        1500,
-      temperature:       0.3,
+      ...(supportsTemperature ? { temperature: 0.3 } : {}),
       ...(systemContent ? { system: systemContent } : {}),
       messages: chatMessages,
     }),
