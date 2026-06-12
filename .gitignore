@@ -41,3 +41,9 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# プロンプト抽出の中間データ（自社研修コンテンツの全件スクレイプ＝524件）はコミットしない
+# 製品に載る49件は src/lib/business-templates.ts に同梱されるため別途管理
+prompts-extracted*
+prompts-curated*
+prompts-final*
