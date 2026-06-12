@@ -18,6 +18,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useRouter } from 'next/navigation'
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser'
 import type { ChatSession, ChatMessage } from '@/lib/types'
@@ -1266,12 +1268,42 @@ function ChatBubble({
 
       {/* バブル本体 */}
       <div className={`flex flex-col gap-2 ${isUser ? 'items-end' : 'items-start'} flex-1 min-w-0`}>
-        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words
+        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed break-words
           ${isUser
-            ? 'bg-brand-600 text-white rounded-tr-sm max-w-[85%] shadow-sm'
+            ? 'bg-brand-600 text-white rounded-tr-sm max-w-[85%] shadow-sm whitespace-pre-wrap'
             : 'bg-white border border-ink-200 text-ink-800 rounded-tl-sm shadow-card w-full'
           }`}>
-          {m.content}
+          {isUser ? (
+            <>{m.content}</>
+          ) : m.content ? (
+            <div className="prose prose-sm max-w-none
+                            prose-headings:font-bold prose-headings:text-ink-900 prose-headings:mt-3 prose-headings:mb-1.5
+                            prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-h4:text-xs
+                            prose-p:my-1.5 prose-p:text-ink-800
+                            prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-li:text-ink-800
+                            prose-strong:text-ink-900 prose-strong:font-semibold
+                            prose-a:text-brand-600 prose-a:no-underline hover:prose-a:underline
+                            prose-table:my-2 prose-table:text-xs
+                            prose-th:bg-ink-50 prose-th:text-ink-700 prose-th:font-semibold prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-ink-200
+                            prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-ink-200 prose-td:align-top
+                            prose-pre:bg-ink-900 prose-pre:text-ink-50 prose-pre:text-[11px] prose-pre:leading-snug prose-pre:overflow-x-auto prose-pre:my-2
+                            prose-code:text-brand-700 prose-code:bg-brand-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-[0.85em] prose-code:before:content-[''] prose-code:after:content-['']
+                            prose-hr:my-3">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  table: ({ node, ...props }) => (
+                    <div className="overflow-x-auto"><table {...props} /></div>
+                  ),
+                  a: ({ node, ...props }) => (
+                    <a target="_blank" rel="noopener noreferrer" {...props} />
+                  ),
+                }}
+              >
+                {m.content}
+              </ReactMarkdown>
+            </div>
+          ) : null}
           {m.isStreaming && m.content && (
             <span className="inline-block w-0.5 h-3.5 bg-current rounded-sm animate-caret ml-0.5 align-middle" />
           )}
