@@ -168,6 +168,7 @@ export default function ChatPage() {
   // 右パネル状態
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('templates')
+  const [bizTplCat, setBizTplCat]           = useState(0)  // 経営アシスト・テンプレの選択カテゴリ
 
   // 履歴サイドバー状態
   const [sessions, setSessions]           = useState<ChatSession[]>([])
@@ -1034,31 +1035,71 @@ export default function ChatPage() {
 
             {/* テンプレートタブ */}
             {rightTab === 'templates' && (
-              <div className="flex-1 overflow-y-auto scrollbar-slim p-3 space-y-4">
-                <p className="text-[11px] text-ink-400">クリックすると入力欄に設定します</p>
-                {(chatMode === 'subsidy' ? QUICK_TEMPLATES : BUSINESS_TEMPLATES).map(({ category, items }) => (
-                  <div key={category}>
-                    <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wider mb-1.5">
-                      {category}
-                    </p>
-                    <div className="space-y-1">
-                      {items.map(({ label, q }) => (
-                        <button
-                          key={label}
-                          onClick={() => { setInput(q); inputRef.current?.focus() }}
-                          title={q.length > 180 ? q.slice(0, 180) + '…' : q}
-                          className="w-full text-left text-xs px-3 py-2 rounded-lg
-                                     border border-ink-200 bg-white text-ink-700
-                                     hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700
-                                     transition-all line-clamp-2"
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+              chatMode === 'business' ? (
+                // ── 経営アシスト: カテゴリをチップで選んで絞り込み ──
+                <div className="flex flex-col min-h-0 flex-1">
+                  <div className="flex flex-wrap gap-1 p-3 pb-2 border-b border-ink-100 shrink-0">
+                    {BUSINESS_TEMPLATES.map(({ category }, i) => (
+                      <button
+                        key={category}
+                        onClick={() => setBizTplCat(i)}
+                        className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all ${
+                          bizTplCat === i
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white text-ink-600 border-ink-200 hover:border-brand-300 hover:text-brand-600'
+                        }`}
+                      >
+                        {category.split('・')[0]}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                  <div className="flex-1 overflow-y-auto scrollbar-slim p-3 space-y-1">
+                    <p className="text-[11px] text-ink-400 mb-1.5">
+                      {BUSINESS_TEMPLATES[bizTplCat].category}（{BUSINESS_TEMPLATES[bizTplCat].items.length}件）— クリックで入力欄に挿入
+                    </p>
+                    {BUSINESS_TEMPLATES[bizTplCat].items.map(({ label, q }) => (
+                      <button
+                        key={label}
+                        onClick={() => { setInput(q); inputRef.current?.focus() }}
+                        title={q.length > 180 ? q.slice(0, 180) + '…' : q}
+                        className="w-full text-left text-xs px-3 py-2 rounded-lg
+                                   border border-ink-200 bg-white text-ink-700
+                                   hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700
+                                   transition-all line-clamp-2"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                // ── 補助金相談: 従来どおりカテゴリ縦積み ──
+                <div className="flex-1 overflow-y-auto scrollbar-slim p-3 space-y-4">
+                  <p className="text-[11px] text-ink-400">クリックすると入力欄に設定します</p>
+                  {QUICK_TEMPLATES.map(({ category, items }) => (
+                    <div key={category}>
+                      <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wider mb-1.5">
+                        {category}
+                      </p>
+                      <div className="space-y-1">
+                        {items.map(({ label, q }) => (
+                          <button
+                            key={label}
+                            onClick={() => { setInput(q); inputRef.current?.focus() }}
+                            title={q.length > 180 ? q.slice(0, 180) + '…' : q}
+                            className="w-full text-left text-xs px-3 py-2 rounded-lg
+                                       border border-ink-200 bg-white text-ink-700
+                                       hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700
+                                       transition-all line-clamp-2"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             )}
 
             {/* 補助金情報タブ */}
