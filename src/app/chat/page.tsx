@@ -501,22 +501,6 @@ export default function ChatPage() {
           ))}
         </select>
 
-        {/* 右パネルトグル */}
-        <button
-          onClick={() => setRightPanelOpen(o => !o)}
-          className={`p-1.5 rounded-lg transition-colors shrink-0 ${
-            rightPanelOpen
-              ? 'bg-blue-100 text-blue-600'
-              : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-          }`}
-          title={rightPanelOpen ? 'パネルを閉じる' : 'テンプレート / 補助金情報'}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-        </button>
-
         {messages.length > 0 && (
           <button
             onClick={clearChat}
@@ -712,9 +696,23 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* ── 右パネル (PC のみ・開閉可能) ────────────────── */}
+        {/* ── 右パネルトグルストリップ (PC のみ・常時表示) ── */}
+        <button
+          onClick={() => setRightPanelOpen(o => !o)}
+          className="hidden lg:flex flex-col items-center justify-center w-5 shrink-0
+                     border-l border-gray-200 bg-gray-50 hover:bg-blue-50
+                     text-gray-400 hover:text-blue-500 transition-colors"
+          title={rightPanelOpen ? 'パネルを閉じる' : 'パネルを開く'}
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+              d={rightPanelOpen ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'} />
+          </svg>
+        </button>
+
+        {/* ── 右パネル本体 (PC のみ・開閉可能) ──────────── */}
         {rightPanelOpen && (
-          <aside className="hidden lg:flex flex-col w-72 border-l border-gray-200 bg-white shrink-0">
+          <aside className="hidden lg:flex flex-col w-72 bg-white shrink-0">
 
             {/* タブバー */}
             <div className="flex items-stretch border-b border-gray-200 shrink-0">
