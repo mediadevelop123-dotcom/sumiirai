@@ -91,12 +91,14 @@ export async function POST(req: Request) {
     prefecture,
     industry,
     model,
+    mode = 'subsidy',
     sessionId: incomingSessionId,
   } = body as {
     messages:    { role: 'user' | 'assistant'; content: string }[]
     prefecture?: string
     industry?:   string
     model?:      string
+    mode?:       'subsidy' | 'business'
     sessionId?:  string
   }
 
@@ -160,6 +162,52 @@ export async function POST(req: Request) {
         } catch (e) {
           console.error('[chat] セッション/ユーザーメッセージ保存失敗:', e)
           sessionId = null
+        }
+
+        // ── business モード: RAGスキップ・専用プロンプト ────────────
+        if (mode === 'business') {
+          const industryNote  = industry   ? `\n業種: ${industry}。この業種特有の用語・慣習・顧客層を踏まえて回答する。` : ''
+          const prefectureNote = prefecture ? `\n所在地: ${prefecture}。地域性が回答に関係する場合は反映する。` : ''
+          const businessSystemPrompt = `あなたは対面サービス業の経営者・スタッフを支援するAIアシスタントです。
+飲食業・美容業・小売業・宿泊業など、日々の経営・業務に役立つサポートを提供します。${industryNote}${prefectureNote}
+
+【対応できること】
+メール・文書・お知らせ文の作成（取引先・顧客・スタッフ向け）、SNS投稿文・広告コピーの作成、求人票・採用関連文書の作成、クレーム対応・謝罪文の作成、業務改善提案・アイデア出し、経営数値へのコメント・簡易分析、ミーティング議事録の整形
+
+【回答スタイル】
+- 実用的で「そのままコピーして使える」形で出力する
+- 修正が必要な箇所は【　】で囲んで明示する（例：【店舗名】【日付】）
+- 絵文字は使用しない
+- Markdownテーブルは必要な場合のみ使用する
+- 補助金・助成金の話題が出た場合は「補助金相談タブで詳しくご案内できます」とだけ案内して詳細には踏み込まない`
+
+          const llmMessages: LLMMessage[] = [
+            { role: 'system', content: businessSystemPrompt },
+            ...trimHistory(messages),
+          ]
+          const { stream: llmStream, usage: usagePromise } = await chatStream(llmMessages, model)
+          const reader = llmStream.getReader()
+          const dec = new TextDecoder()
+          let assistantText = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const piece = dec.decode(value, { stream: true })
+            assistantText += piece
+            send('delta', { text: piece })
+          }
+          const { inputTokens, outputTokens } = await usagePromise
+          if (sessionId && assistantText.trim()) {
+            try {
+              await addMessage({ sessionId, role: 'assistant', content: assistantText, llmModelId: getChatModelId(model), inputTokens, outputTokens, sources: [] })
+              const firstUserContent = messages.find(m => m.role === 'user')?.content ?? lastUserMsg.content
+              await ensureSessionTitle(sessionId, user.id, firstUserContent)
+            } catch (e) {
+              console.error('[chat] business: アシスタントメッセージ保存失敗:', e)
+            }
+          }
+          send('done', { sessionId })
+          return
         }
 
         // ── Step 1: 会話コンテキストをベクトル化 ────────────────────
