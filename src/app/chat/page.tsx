@@ -181,6 +181,7 @@ export default function ChatPage() {
   const [model, setModel]                 = useState<string>(DEFAULT_MODEL_ID)
   const [loading, setLoading]             = useState(false)
   const [conciergeGoal, setConciergeGoal] = useState<string>('')  // コンシェルジュフォームのテーマ選択
+  const [showConcierge, setShowConcierge] = useState(true)        // 案内フォーム表示可否（新規チャット開始時に確定）
   const [chatMode, setChatMode]           = useState<'subsidy' | 'business'>('subsidy')
   const [latestSources, setLatestSources] = useState<Subsidy[]>([])
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
@@ -492,6 +493,7 @@ export default function ChatPage() {
     setRightPanelOpen(true)
     setRightTab('templates')
     setConciergeGoal('')
+    setShowConcierge(!industry)   // 業種未設定の新規チャットのみ案内フォームを表示
     inputRef.current?.focus()
   }
 
@@ -507,6 +509,7 @@ export default function ChatPage() {
     sessionIdRef.current = null
     setActiveSessionId(null)
     setConciergeGoal('')
+    setShowConcierge(!industry)   // 補助金モードへ戻った際も業種未設定なら案内フォーム
     setRightTab('templates')
   }
 
@@ -781,8 +784,8 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* コンシェルジュフォーム — 業種未設定の新規チャット時のみ表示 */}
-            {messages.length === 0 && chatMode === 'subsidy' && !industry && (
+            {/* コンシェルジュフォーム — 業種未設定で新規チャットを開始したときのみ表示 */}
+            {messages.length === 0 && chatMode === 'subsidy' && showConcierge && (
               <div className="flex flex-col items-center justify-center h-full py-6 px-4">
                 <div className="w-full max-w-sm bg-white rounded-2xl shadow-card border border-ink-100 p-6 space-y-4">
 
@@ -872,7 +875,7 @@ export default function ChatPage() {
                   {/* スキップ */}
                   <button
                     type="button"
-                    onClick={() => inputRef.current?.focus()}
+                    onClick={() => { setShowConcierge(false); inputRef.current?.focus() }}
                     className="w-full text-xs text-ink-400 hover:text-ink-600 transition-colors py-1"
                   >
                     自由に入力する →
@@ -907,8 +910,8 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* subsidy モード・業種設定済み・メッセージなし: シンプルウェルカム */}
-            {messages.length === 0 && chatMode === 'subsidy' && industry && (
+            {/* subsidy モード・案内フォーム非表示・メッセージなし: シンプルウェルカム */}
+            {messages.length === 0 && chatMode === 'subsidy' && !showConcierge && (
               <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-card mb-1">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -917,7 +920,9 @@ export default function ChatPage() {
                   </svg>
                 </div>
                 <p className="text-sm font-semibold text-ink-700">
-                  {industry}{prefecture ? `（${prefecture}）` : ''}で相談を始めましょう
+                  {industry
+                    ? `${industry}${prefecture ? `（${prefecture}）` : ''}で相談を始めましょう`
+                    : 'お気軽にご相談ください'}
                 </p>
                 <p className="text-xs text-ink-400">右パネルのテンプレートを選ぶか、下の入力欄に自由に質問してください</p>
               </div>
