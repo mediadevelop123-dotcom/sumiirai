@@ -649,8 +649,8 @@ export default function ChatPage() {
           {/* チャット表示エリア */}
           <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
 
-            {/* コンシェルジュフォーム */}
-            {messages.length === 0 && (
+            {/* コンシェルジュフォーム — 業種未設定の新規チャット時のみ表示 */}
+            {messages.length === 0 && !industry && (
               <div className="flex flex-col items-center justify-center h-full py-6 px-4">
                 <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
 
@@ -766,6 +766,17 @@ export default function ChatPage() {
                   )}
 
                 </div>
+              </div>
+            )}
+
+            {/* 業種設定済み・メッセージなし: シンプルウェルカム */}
+            {messages.length === 0 && industry && (
+              <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
+                <p className="text-2xl">💬</p>
+                <p className="text-sm font-medium text-gray-700">
+                  {industry}{prefecture ? `（${prefecture}）` : ''}で相談を始めましょう
+                </p>
+                <p className="text-xs text-gray-400">右パネルのテンプレートを選ぶか、下の入力欄に自由に質問してください</p>
               </div>
             )}
 
