@@ -6,8 +6,9 @@
  */
 
 export const AVAILABLE_MODELS = [
-  { id: 'bedrock-claude-haiku-4-5', name: 'Claude Haiku 4.5', provider: 'bedrock' as const },
-  { id: 'openai-gpt-4o-mini',       name: 'GPT-4o mini',      provider: 'openai'  as const },
+  { id: 'bedrock-claude-haiku-4-5',  name: 'Claude Haiku',  provider: 'bedrock' as const },
+  { id: 'bedrock-claude-sonnet-4-6', name: 'Claude Sonnet', provider: 'bedrock' as const },
+  { id: 'bedrock-claude-opus-4-8',   name: 'Claude Opus',   provider: 'bedrock' as const },
 ] as const
 
 export type ModelId = typeof AVAILABLE_MODELS[number]['id']

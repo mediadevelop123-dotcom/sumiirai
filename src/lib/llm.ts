@@ -13,7 +13,7 @@
  *    AWS_SECRET_ACCESS_KEY=<your-secret-key>
  * 3. Bedrock Model catalog で以下を有効化:
  *    - Amazon Titan Embeddings V2       (amazon.titan-embed-text-v2:0)
- *    - Anthropic Claude Haiku 4.5       (us.anthropic.claude-haiku-4-5-20251001-v1:0)
+ *    - Anthropic Claude Haiku / Sonnet / Opus  (Bedrock cross-region inference profiles)
  * 4. Supabase SQL Editor で 003_bedrock_migration.sql を実行
  * 5. 埋め込みを再生成: npx tsx scripts/sync-subsidies.ts
  * ────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ export function getEmbeddingDimension(): number {
  */
 export function getChatModelId(modelId?: string): string {
   if (modelId) return modelId
-  return getProvider() === 'bedrock' ? DEFAULT_MODEL_ID : 'openai-gpt-4o-mini'
+  return DEFAULT_MODEL_ID
 }
 
 /**
@@ -146,6 +146,18 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   return json.embedding
 }
 
+// ─── Bedrock モデル ID 解決 ───────────────────────────────────
+
+// Bedrock cross-region inference profile IDs (us-east-1 routing)
+// IDs can be verified in: AWS Console → Bedrock → Model catalog → Inference profiles
+function getBedrockModelId(modelId?: string): string {
+  switch (modelId) {
+    case 'bedrock-claude-sonnet-4-6': return 'us.anthropic.claude-sonnet-4-6-20251114-v1:0'
+    case 'bedrock-claude-opus-4-8':   return 'us.anthropic.claude-opus-4-8-20260101-v1:0'
+    default:                          return 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+  }
+}
+
 // ─── チャット (ストリーミング) ────────────────────────────────
 
 export async function chatStream(
@@ -193,7 +205,7 @@ export async function chatStream(
     return { stream, usage }
   }
 
-  // ── Bedrock: Claude Haiku 4.5 ─────────────────────────────────
+  // ── Bedrock: Claude Haiku / Sonnet / Opus ────────────────────
   const client = getBedrockClient()
 
   // Bedrock Anthropic API は system を別フィールドで受け取る
@@ -203,7 +215,7 @@ export async function chatStream(
     .map(m => ({ role: m.role, content: m.content }))
 
   const res = await client.send(new InvokeModelWithResponseStreamCommand({
-    modelId:     'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    modelId:     getBedrockModelId(modelId),
     contentType: 'application/json',
     accept:      'application/json',
     body: JSON.stringify({
