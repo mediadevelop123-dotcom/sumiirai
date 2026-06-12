@@ -160,8 +160,8 @@ export default function ChatPage() {
   const [isAdmin, setIsAdmin]             = useState(false)
 
   // 右パネル状態
-  const [rightPanelOpen, setRightPanelOpen] = useState(false)
-  const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('subsidies')
+  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('templates')
 
   // 履歴サイドバー状態
   const [sessions, setSessions]           = useState<ChatSession[]>([])
@@ -431,6 +431,8 @@ export default function ChatPage() {
     setMentionedIds(new Set())
     setInput('')
     setLoading(false)
+    setRightPanelOpen(true)
+    setRightTab('templates')
     inputRef.current?.focus()
   }
 
