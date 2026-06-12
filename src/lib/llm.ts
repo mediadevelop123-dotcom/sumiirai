@@ -25,6 +25,7 @@ import {
   InvokeModelCommand,
   InvokeModelWithResponseStreamCommand,
 } from '@aws-sdk/client-bedrock-runtime'
+import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from './llm-models'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -65,11 +66,22 @@ export function getEmbeddingDimension(): number {
 }
 
 /**
- * 現在のプロバイダに対応する llm_models.id (チャットモデル)。
- * chat_messages.llm_model_id に記録する値。004_chat.sql のシードと一致させること。
+ * チャットモデルの llm_models.id を返す。
+ * modelId が指定されていればそれを使用、未指定なら LLM_PROVIDER から解決。
  */
-export function getChatModelId(): string {
-  return getProvider() === 'bedrock' ? 'bedrock-claude-haiku-4-5' : 'openai-gpt-4o-mini'
+export function getChatModelId(modelId?: string): string {
+  if (modelId) return modelId
+  return getProvider() === 'bedrock' ? DEFAULT_MODEL_ID : 'openai-gpt-4o-mini'
+}
+
+/**
+ * modelId からプロバイダを解決する。
+ * 未指定なら LLM_PROVIDER 環境変数にフォールバック。
+ */
+function resolveProvider(modelId?: string): 'openai' | 'bedrock' {
+  if (!modelId) return getProvider()
+  const entry = AVAILABLE_MODELS.find(m => m.id === modelId)
+  return entry?.provider ?? getProvider()
 }
 
 /**
@@ -136,8 +148,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 // ─── チャット (ストリーミング) ────────────────────────────────
 
-export async function chatStream(messages: LLMMessage[]): Promise<LLMStreamResult> {
-  const provider = getProvider()
+export async function chatStream(
+  messages: LLMMessage[],
+  modelId?: string,
+): Promise<LLMStreamResult> {
+  const provider = resolveProvider(modelId)
   const encoder = new TextEncoder()
 
   // ── OpenAI: GPT-4o-mini ───────────────────────────────────────

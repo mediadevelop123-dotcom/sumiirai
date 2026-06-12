@@ -90,11 +90,13 @@ export async function POST(req: Request) {
     messages = [],
     prefecture,
     industry,
+    model,
     sessionId: incomingSessionId,
   } = body as {
     messages:    { role: 'user' | 'assistant'; content: string }[]
     prefecture?: string
     industry?:   string
+    model?:      string
     sessionId?:  string
   }
 
@@ -479,7 +481,7 @@ ${contextBlock}`
         ]
 
         // ── Step 5: LLM ストリーミング応答 ───────────────────────
-        const { stream: llmStream, usage: usagePromise } = await chatStream(llmMessages)
+        const { stream: llmStream, usage: usagePromise } = await chatStream(llmMessages, model)
         const reader = llmStream.getReader()
         const dec = new TextDecoder()
         let assistantText = ''
@@ -518,7 +520,7 @@ ${contextBlock}`
               sessionId,
               role:         'assistant',
               content:      assistantText,
-              llmModelId:   getChatModelId(),
+              llmModelId:   getChatModelId(model),
               inputTokens,
               outputTokens,
               sources:      mergedList,

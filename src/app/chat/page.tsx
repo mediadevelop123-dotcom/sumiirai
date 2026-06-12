@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation'
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser'
 import type { ChatSession, ChatMessage } from '@/lib/types'
 import { INDUSTRY_LIST } from '@/lib/industry-prompts'
+import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from '@/lib/llm-models'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -131,6 +132,7 @@ export default function ChatPage() {
   const [input, setInput]                 = useState('')
   const [prefecture, setPrefecture]       = useState('')
   const [industry, setIndustry]           = useState('')
+  const [model, setModel]                 = useState(DEFAULT_MODEL_ID)
   const [loading, setLoading]             = useState(false)
   const [latestSources, setLatestSources] = useState<Subsidy[]>([])
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
@@ -294,6 +296,7 @@ export default function ChatPage() {
           messages:   history,
           prefecture: prefecture || null,
           industry:   industry   || null,
+          model,
           sessionId:  sessionIdRef.current,
         }),
         signal: abortCtrlRef.current.signal,
@@ -377,7 +380,7 @@ export default function ChatPage() {
       abortCtrlRef.current = null
       inputRef.current?.focus()
     }
-  }, [loading, messages, prefecture, industry, router, fetchSessions])
+  }, [loading, messages, prefecture, industry, model, router, fetchSessions])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -450,6 +453,18 @@ export default function ChatPage() {
           <option value="">📍 全国</option>
           {PREFECTURES.map(p => (
             <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+
+        <select
+          value={model}
+          onChange={e => setModel(e.target.value)}
+          disabled={loading}
+          className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+          title="使用するAIモデルを選択"
+        >
+          {AVAILABLE_MODELS.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
           ))}
         </select>
 
