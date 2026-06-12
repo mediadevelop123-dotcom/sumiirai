@@ -1008,9 +1008,15 @@ function SubsidyCard({
       </div>
 
       <div className="mt-2.5 flex items-center justify-between">
-        <span className={`text-blue-500 font-medium ${compact ? 'text-[10px]' : 'text-xs'}`}>
-          関連度 {similarityPct}%
-        </span>
+        {s.source === 'static' ? (
+          <span className={`font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+            主要補助金
+          </span>
+        ) : (
+          <span className={`text-blue-500 font-medium ${compact ? 'text-[10px]' : 'text-xs'}`}>
+            関連度 {similarityPct}%
+          </span>
+        )}
         <a
           href={s.url}
           target="_blank"
