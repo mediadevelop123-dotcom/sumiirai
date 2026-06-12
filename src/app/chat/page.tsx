@@ -21,6 +21,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser'
 import type { ChatSession, ChatMessage } from '@/lib/types'
+import { INDUSTRY_LIST } from '@/lib/industry-prompts'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -129,6 +130,7 @@ export default function ChatPage() {
   const [messages, setMessages]           = useState<Message[]>([])
   const [input, setInput]                 = useState('')
   const [prefecture, setPrefecture]       = useState('')
+  const [industry, setIndustry]           = useState('')
   const [loading, setLoading]             = useState(false)
   const [latestSources, setLatestSources] = useState<Subsidy[]>([])
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
@@ -291,6 +293,7 @@ export default function ChatPage() {
         body:    JSON.stringify({
           messages:   history,
           prefecture: prefecture || null,
+          industry:   industry   || null,
           sessionId:  sessionIdRef.current,
         }),
         signal: abortCtrlRef.current.signal,
@@ -374,7 +377,7 @@ export default function ChatPage() {
       abortCtrlRef.current = null
       inputRef.current?.focus()
     }
-  }, [loading, messages, prefecture, router, fetchSessions])
+  }, [loading, messages, prefecture, industry, router, fetchSessions])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -425,6 +428,18 @@ export default function ChatPage() {
           <h1 className="text-sm font-bold text-gray-900 truncate">🤖 補助金相談 AI</h1>
           <p className="text-[11px] text-gray-400 truncate">β版 — 参考情報としてご利用ください</p>
         </div>
+
+        <select
+          value={industry}
+          onChange={e => setIndustry(e.target.value)}
+          disabled={loading}
+          className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+        >
+          <option value="">🏪 業種を選択</option>
+          {INDUSTRY_LIST.map(i => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
 
         <select
           value={prefecture}

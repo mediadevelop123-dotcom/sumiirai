@@ -22,6 +22,7 @@ import { getServiceClient } from '@/lib/supabase'
 import { getUser } from '@/lib/supabase-server'
 import { createSession, getSession, addMessage, ensureSessionTitle } from '@/lib/chat-store'
 import { detectViolations, buildCorrectionText } from '@/lib/security-guard'
+import { getIndustrySegment } from '@/lib/industry-prompts'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -88,10 +89,12 @@ export async function POST(req: Request) {
   const {
     messages = [],
     prefecture,
+    industry,
     sessionId: incomingSessionId,
   } = body as {
     messages:    { role: 'user' | 'assistant'; content: string }[]
     prefecture?: string
+    industry?:   string
     sessionId?:  string
   }
 
@@ -140,6 +143,7 @@ export async function POST(req: Request) {
             const created = await createSession({
               userId:     user.id,
               prefecture: prefecture ?? null,
+              industry:   industry   ?? null,
               orgId:      profile?.org_id ?? null,
             })
             sessionId = created.id
@@ -211,8 +215,10 @@ export async function POST(req: Request) {
           : `【補助金情報】\n現在の条件に合致する補助金が見つかりませんでした。` +
             `条件を変えてお試しいただくか、一般的なご相談として回答します。`
 
+        const industrySegment = getIndustrySegment(industry)
+
         const systemPrompt = `あなたは中小企業・個人事業主向けの補助金専門アドバイザーです。
-主に飲食業・理美容業・小売業などの対面サービス業を支援します。
+主に飲食業・理美容業・小売業・宿泊業・整骨院など対面サービス業を支援します。
 
 【ヒアリングの進め方 — 最重要】
 補助金を提案する前に、以下の3点を自然な会話で確認してください：
@@ -432,6 +438,7 @@ export async function POST(req: Request) {
 - 現在募集していない場合でも「現在は締め切り中ですが、次回公募は〇〇頃予定です。事前準備として…」と案内してください
 - 申請締切が null の補助金でも、制度の概要・対象・金額・URLは積極的に案内すること
 
+${industrySegment}
 ${contextBlock}`
 
         const llmMessages: LLMMessage[] = [
