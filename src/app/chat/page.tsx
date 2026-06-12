@@ -155,6 +155,7 @@ export default function ChatPage() {
   const [industry, setIndustry]           = useState('')
   const [model, setModel]                 = useState<string>(DEFAULT_MODEL_ID)
   const [loading, setLoading]             = useState(false)
+  const [conciergeGoal, setConciergeGoal] = useState<string>('')  // コンシェルジュフォームのテーマ選択
   const [latestSources, setLatestSources] = useState<Subsidy[]>([])
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
   const [isAdmin, setIsAdmin]             = useState(false)
@@ -303,10 +304,26 @@ export default function ChatPage() {
     }
   }, [])
 
+  // ── コンシェルジュ: 最初のメッセージを自動生成 ─────────────
+
+  function buildStartMessage(ind: string, pref: string, goal: string): string {
+    const who  = ind  ? `${ind}を営んでいます` : '事業を営んでいます'
+    const loc  = pref ? `（${pref}）` : ''
+    const want = goal || '活用できる補助金を教えてください。'
+    return `${who}${loc}。${want}`
+  }
+
   // ── メッセージ送信 ─────────────────────────────────────────
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, opts?: { industry?: string; prefecture?: string }) => {
     if (!text.trim() || loading) return
+
+    // コンシェルジュフォームから渡された値があれば state に適用（次ターン以降のために）
+    if (opts?.industry   !== undefined) setIndustry(opts.industry)
+    if (opts?.prefecture !== undefined) setPrefecture(opts.prefecture)
+
+    const effIndustry   = opts?.industry   ?? industry
+    const effPrefecture = opts?.prefecture ?? prefecture
 
     const userMsg: Message = {
       id:      crypto.randomUUID(),
@@ -340,8 +357,8 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           messages:   history,
-          prefecture: prefecture || null,
-          industry:   industry   || null,
+          prefecture: effPrefecture || null,
+          industry:   effIndustry   || null,
           model,
           sessionId:  sessionIdRef.current,
         }),
@@ -427,7 +444,7 @@ export default function ChatPage() {
       abortCtrlRef.current = null
       inputRef.current?.focus()
     }
-  }, [loading, messages, prefecture, industry, model, router, fetchSessions])
+  }, [loading, messages, prefecture, industry, model, router, fetchSessions, setIndustry, setPrefecture])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -447,6 +464,7 @@ export default function ChatPage() {
     setLoading(false)
     setRightPanelOpen(true)
     setRightTab('templates')
+    setConciergeGoal('')
     inputRef.current?.focus()
   }
 
@@ -631,33 +649,122 @@ export default function ChatPage() {
           {/* チャット表示エリア */}
           <div className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
 
-            {/* スターター画面 */}
+            {/* コンシェルジュフォーム */}
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full py-10 text-center space-y-6">
-                <div>
-                  <p className="text-4xl mb-3">🤖</p>
-                  <h2 className="text-lg font-semibold text-gray-800">
-                    補助金について気軽に相談してください
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    飲食業・理美容業・小売業など、対面サービス業向けの補助金を AI が提案します
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
-                  {STARTER_QUESTIONS.map(({ label, color, question }) => (
-                    <button
-                      key={label}
-                      onClick={() => sendMessage(question)}
-                      disabled={loading}
-                      className="text-sm text-left p-3 rounded-xl border border-gray-200 bg-white
-                                 hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm"
+              <div className="flex flex-col items-center justify-center h-full py-6 px-4">
+                <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+
+                  {/* タイトル */}
+                  <div className="text-center">
+                    <p className="text-2xl mb-1.5">🏪</p>
+                    <h2 className="text-base font-bold text-gray-800">まず、お店のことを教えてください</h2>
+                    <p className="text-[11px] text-gray-400 mt-0.5">業種と地域を選ぶと最適な補助金をご提案します</p>
+                  </div>
+
+                  {/* 業種 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                      業種 <span className="text-red-400 text-[10px] font-normal">必須</span>
+                    </label>
+                    <select
+                      value={industry}
+                      onChange={e => setIndustry(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded mb-1.5 ${color}`}>
-                        {label}
-                      </span>
-                      <p className="text-gray-700 leading-snug">{question}</p>
-                    </button>
-                  ))}
+                      <option value="">選択してください</option>
+                      {INDUSTRY_LIST.map(i => <option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </div>
+
+                  {/* 都道府県 */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">
+                      所在地 <span className="text-[10px] text-gray-400 font-normal">（任意）</span>
+                    </label>
+                    <select
+                      value={prefecture}
+                      onChange={e => setPrefecture(e.target.value)}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">全国（都道府県を指定しない）</option>
+                      {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+
+                  {/* 相談テーマ */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-1.5">
+                      今日のご相談 <span className="text-[10px] text-gray-400 font-normal">（任意）</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {QUICK_TEMPLATES.flatMap(c => c.items).map(item => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setConciergeGoal(g => g === item.q ? '' : item.q)}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border transition-all ${
+                            conciergeGoal === item.q
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 送信ボタン */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sendMessage(buildStartMessage(industry, prefecture, conciergeGoal))
+                      setConciergeGoal('')
+                    }}
+                    disabled={!industry || loading}
+                    className="w-full py-2.5 rounded-xl bg-blue-600 text-sm font-semibold text-white
+                               hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed
+                               transition-colors"
+                  >
+                    相談を始める
+                  </button>
+
+                  {/* スキップ */}
+                  <button
+                    type="button"
+                    onClick={() => inputRef.current?.focus()}
+                    className="w-full text-xs text-gray-400 hover:text-gray-500 transition-colors py-1"
+                  >
+                    自由に入力する →
+                  </button>
+
+                  {/* 管理者向けセキュリティテスト（isAdmin 時のみ） */}
+                  {isAdmin && (
+                    <details className="pt-1">
+                      <summary className="text-[10px] text-gray-300 cursor-pointer hover:text-gray-400 select-none">
+                        セキュリティテスト（管理者）
+                      </summary>
+                      <div className="mt-2 grid grid-cols-2 gap-1.5">
+                        {STARTER_QUESTIONS.map(({ label, color, question }) => (
+                          <button
+                            key={label}
+                            onClick={() => sendMessage(question)}
+                            disabled={loading}
+                            className="text-[10px] text-left p-2 rounded-lg border border-gray-100
+                                       hover:bg-gray-50 transition-colors"
+                          >
+                            <span className={`inline-block text-[9px] font-semibold px-1 py-0.5 rounded mb-1 ${color}`}>
+                              {label}
+                            </span>
+                            <p className="text-gray-400 leading-tight line-clamp-1">{question.slice(0, 25)}…</p>
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
                 </div>
               </div>
             )}
