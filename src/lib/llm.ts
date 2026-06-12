@@ -152,8 +152,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 // IDs can be verified in: AWS Console → Bedrock → Model catalog → Inference profiles
 function getBedrockModelId(modelId?: string): string {
   switch (modelId) {
-    case 'bedrock-claude-sonnet-4-6': return 'us.anthropic.claude-sonnet-4-6-20251114-v1:0'
-    case 'bedrock-claude-opus-4-8':   return 'us.anthropic.claude-opus-4-8-20260101-v1:0'
+    case 'bedrock-claude-sonnet-4-6': return 'us.anthropic.claude-sonnet-4-6'
+    case 'bedrock-claude-opus-4-8':   return 'us.anthropic.claude-opus-4-8'
     default:                          return 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
   }
 }
