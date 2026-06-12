@@ -170,12 +170,13 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen]     = useState(false)  // モバイル用
 
-  const router       = useRouter()
-  const chatEndRef   = useRef<HTMLDivElement>(null)
-  const inputRef     = useRef<HTMLTextAreaElement>(null)
-  const abortCtrlRef = useRef<AbortController | null>(null)
-  const sessionIdRef = useRef<string | null>(null)
-  const fetchSeqRef  = useRef(0)  // fetchSessions のレース条件防止
+  const router          = useRouter()
+  const chatEndRef      = useRef<HTMLDivElement>(null)
+  const inputRef        = useRef<HTMLTextAreaElement>(null)
+  const abortCtrlRef    = useRef<AbortController | null>(null)
+  const sessionIdRef    = useRef<string | null>(null)
+  const fetchSeqRef     = useRef(0)  // fetchSessions のレース条件防止
+  const sessionCacheRef = useRef<Map<string, Message[]>>(new Map())  // 読み込み済みセッションのキャッシュ
 
   // ── セッション一覧を取得 ───────────────────────────────────
 
@@ -241,14 +242,25 @@ export default function ChatPage() {
 
   const loadSession = useCallback(async (sessionId: string) => {
     if (loading || sessionLoading) return
-    setHistoryOpen(false)  // モバイルではサイドバーを閉じる
-
-    // ── 即時フィードバック: クリックした瞬間にハイライト＆スピナー ──
+    setHistoryOpen(false)
     setActiveSessionId(sessionId)
+    setMentionedIds(new Set())
+
+    // ── キャッシュヒット: 即座に表示してスピナーなし ──────────────
+    const cached = sessionCacheRef.current.get(sessionId)
+    if (cached) {
+      setMessages(cached)
+      setLatestSources([])
+      sessionIdRef.current = sessionId
+      const lastAssistant = [...cached].reverse().find(m => m.role === 'assistant')
+      if (lastAssistant?.sources) setLatestSources(lastAssistant.sources)
+      return
+    }
+
+    // ── キャッシュなし: API から取得 ──────────────────────────────
     setSessionLoading(true)
     setMessages([])
     setLatestSources([])
-    setMentionedIds(new Set())
 
     try {
       const res = await fetch(`/api/v1/sessions/${sessionId}/messages`)
@@ -260,8 +272,8 @@ export default function ChatPage() {
 
       setMessages(uiMessages)
       sessionIdRef.current = sessionId
+      sessionCacheRef.current.set(sessionId, uiMessages)  // キャッシュに保存
 
-      // 最新のアシスタントメッセージのsourcesをサイドバーに反映
       const lastAssistant = [...uiMessages].reverse().find(m => m.role === 'assistant')
       if (lastAssistant?.sources) setLatestSources(lastAssistant.sources)
     } catch {
@@ -276,6 +288,7 @@ export default function ChatPage() {
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
       await fetch(`/api/v1/sessions/${sessionId}`, { method: 'DELETE' })
+      sessionCacheRef.current.delete(sessionId)
       setSessions(prev => prev.filter(s => s.id !== sessionId))
       // 削除したセッションが現在表示中なら新規チャットにリセット
       if (sessionIdRef.current === sessionId) {
@@ -385,7 +398,8 @@ export default function ChatPage() {
             )
             setMentionedIds(ids)
           }
-          // 送信完了後にセッション一覧を更新(タイトル反映)
+          // 送信完了後: キャッシュ無効化 + セッション一覧更新
+          if (sessionIdRef.current) sessionCacheRef.current.delete(sessionIdRef.current)
           fetchSessions()
         } else if (event === 'error') {
           const errMsg = (data as { message: string }).message
