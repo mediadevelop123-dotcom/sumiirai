@@ -163,6 +163,7 @@ function getBedrockModelId(modelId?: string): string {
 export async function chatStream(
   messages: LLMMessage[],
   modelId?: string,
+  maxTokens = 1500,
 ): Promise<LLMStreamResult> {
   const provider = resolveProvider(modelId)
   const encoder = new TextEncoder()
@@ -176,7 +177,7 @@ export async function chatStream(
       stream:         true,
       stream_options: { include_usage: true },
       temperature:    0.3,
-      max_tokens:     1500,
+      max_tokens:     maxTokens,
     })
 
     let usageResolve!: (v: TokenUsage) => void
@@ -223,7 +224,7 @@ export async function chatStream(
     accept:      'application/json',
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
-      max_tokens:        1500,
+      max_tokens:        maxTokens,
       ...(supportsTemperature ? { temperature: 0.3 } : {}),
       ...(systemContent ? { system: systemContent } : {}),
       messages: chatMessages,

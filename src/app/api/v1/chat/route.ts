@@ -190,7 +190,11 @@ export async function POST(req: Request) {
 - 絵文字は使用しない
 - 表はテンプレートで指定された場合や有効な場合のみ使用する
 - 図や構成を示すときは、罫線（┌─┐│└┘など）のASCIIアートは使わない（レイアウトが崩れて読みにくいため）。箇条書き・表・番号付きリストで表現する
-- 情報を詰め込みすぎない。要点を絞り、長くなる場合は見出しで区切って読みやすくする
+
+【長さの方針 — 重要】
+- 1回の回答は要点を絞って簡潔にする。前置き・一般論・「基本原則」などの説明は最小限にし、ユーザーが求めた成果物そのものを優先して出す
+- テンプレートが複数の成果物（例：基本原則＋トレーニング＋チェックリスト＋継続改善…）を求めていても、一度に全部を出し切ろうとしない。まず最も重要な1〜2点を具体的に出し、最後に「続けて〇〇も作りますか？」と尋ねて分割する
+- 情報を入力してもらう必要がある場合は、長大な前置きを付けず、必要項目だけを簡潔に質問する（回答の途中で切れるほど長くしない）
 
 【数少ない例外】
 - 補助金・助成金の具体的な相談は「補助金相談タブで詳しくご案内できます」とだけ伝え、深入りしない
@@ -200,7 +204,7 @@ export async function POST(req: Request) {
             { role: 'system', content: businessSystemPrompt },
             ...trimHistory(messages),
           ]
-          const { stream: llmStream, usage: usagePromise } = await chatStream(llmMessages, model)
+          const { stream: llmStream, usage: usagePromise } = await chatStream(llmMessages, model, 4000)
           const reader = llmStream.getReader()
           const dec = new TextDecoder()
           let assistantText = ''
