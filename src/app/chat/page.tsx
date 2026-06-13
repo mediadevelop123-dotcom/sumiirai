@@ -180,6 +180,19 @@ export default function ChatPage() {
   const [historyOpen, setHistoryOpen]     = useState(false)  // モバイル用
 
   const router          = useRouter()
+
+  // 業種・所在地を localStorage から復元（マウント時）
+  useEffect(() => {
+    const savedIndustry   = localStorage.getItem('chat_industry')
+    const savedPrefecture = localStorage.getItem('chat_prefecture')
+    if (savedIndustry)   { setIndustry(savedIndustry); setShowConcierge(false) }
+    if (savedPrefecture) setPrefecture(savedPrefecture)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 業種・所在地が変わったら localStorage に保存
+  useEffect(() => { localStorage.setItem('chat_industry',   industry)   }, [industry])
+  useEffect(() => { localStorage.setItem('chat_prefecture', prefecture) }, [prefecture])
+
   const chatEndRef      = useRef<HTMLDivElement>(null)
   const inputRef        = useRef<HTMLTextAreaElement>(null)
   const abortCtrlRef    = useRef<AbortController | null>(null)
