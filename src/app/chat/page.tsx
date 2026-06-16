@@ -191,6 +191,7 @@ export default function ChatPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('templates')
   const [bizTplCat, setBizTplCat]           = useState(0)  // 経営アシスト・テンプレの選択カテゴリ
+  const [mobileTplOpen, setMobileTplOpen]   = useState(false)  // モバイル: テンプレートボトムシート
 
   // 履歴サイドバー状態
   const [sessions, setSessions]           = useState<ChatSession[]>([])
@@ -1040,6 +1041,19 @@ export default function ChatPage() {
 
           {/* 入力エリア */}
           <div className="border-t border-ink-200 bg-white px-4 py-3 shrink-0">
+            {/* モバイル: テンプレート起動ボタン（PCは右パネルがあるため非表示） */}
+            <button
+              onClick={() => setMobileTplOpen(true)}
+              className="lg:hidden mb-2 flex items-center gap-1.5 text-xs font-medium text-brand-600
+                         border border-brand-200 bg-brand-50 rounded-lg px-3 py-1.5
+                         hover:bg-brand-100 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              テンプレートから選ぶ
+            </button>
             <div className="flex gap-2 items-end max-w-3xl mx-auto">
               <textarea
                 ref={inputRef}
@@ -1076,6 +1090,87 @@ export default function ChatPage() {
               </button>
             </div>
           </div>
+
+          {/* ── モバイル: テンプレートボトムシート ───────────── */}
+          {mobileTplOpen && (
+            <div className="lg:hidden fixed inset-0 z-40 flex flex-col justify-end">
+              {/* オーバーレイ */}
+              <div className="absolute inset-0 bg-black/30" onClick={() => setMobileTplOpen(false)} />
+
+              {/* シート本体 */}
+              <div className="relative bg-white rounded-t-2xl shadow-card max-h-[75vh] flex flex-col">
+                {/* ヘッダー */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-ink-100 shrink-0">
+                  <p className="text-sm font-bold text-ink-800">テンプレート</p>
+                  <button
+                    onClick={() => setMobileTplOpen(false)}
+                    className="p-1.5 rounded-lg text-ink-400 hover:text-ink-600 hover:bg-ink-100 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {chatMode === 'business' ? (
+                  <>
+                    {/* カテゴリチップ */}
+                    <div className="flex flex-wrap gap-1 p-3 pb-2 border-b border-ink-100 shrink-0">
+                      {BUSINESS_TEMPLATES.map(({ category }, i) => (
+                        <button
+                          key={category}
+                          onClick={() => setBizTplCat(i)}
+                          className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all ${
+                            bizTplCat === i
+                              ? 'bg-brand-600 text-white border-brand-600'
+                              : 'bg-white text-ink-600 border-ink-200 hover:border-brand-300 hover:text-brand-600'
+                          }`}
+                        >
+                          {category.split('・')[0]}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex-1 overflow-y-auto scrollbar-slim p-3 space-y-1">
+                      {BUSINESS_TEMPLATES[bizTplCat].items.map(({ label, q }) => (
+                        <button
+                          key={label}
+                          onClick={() => { setInput(q); setMobileTplOpen(false); inputRef.current?.focus() }}
+                          className="w-full text-left text-xs px-3 py-2.5 rounded-lg
+                                     border border-ink-200 bg-white text-ink-700
+                                     active:bg-brand-50 active:border-brand-300 transition-all line-clamp-2"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scrollbar-slim p-3 space-y-4">
+                    {QUICK_TEMPLATES.map(({ category, items }) => (
+                      <div key={category}>
+                        <p className="text-[10px] font-semibold text-ink-400 uppercase tracking-wider mb-1.5">
+                          {category}
+                        </p>
+                        <div className="space-y-1">
+                          {items.map(({ label, q }) => (
+                            <button
+                              key={label}
+                              onClick={() => { setInput(q); setMobileTplOpen(false); inputRef.current?.focus() }}
+                              className="w-full text-left text-xs px-3 py-2.5 rounded-lg
+                                         border border-ink-200 bg-white text-ink-700
+                                         active:bg-brand-50 active:border-brand-300 transition-all line-clamp-2"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 右パネルトグルストリップ (PC のみ・常時表示) ── */}
