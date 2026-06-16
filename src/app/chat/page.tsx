@@ -187,6 +187,9 @@ export default function ChatPage() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null)
 
+  // 保存済み成果物モーダル状態
+  const [savedModalOpen, setSavedModalOpen] = useState(false)
+
   // 右パネル状態
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('templates')
@@ -663,6 +666,18 @@ export default function ChatPage() {
           </button>
         )}
 
+        {/* 保存済み成果物ボタン */}
+        <button
+          onClick={() => setSavedModalOpen(true)}
+          className="p-1.5 rounded-lg text-ink-400 hover:text-amber-500 hover:bg-amber-50 transition-colors shrink-0"
+          title="保存済み成果物"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
+        </button>
+
         {/* 店舗設定ボタン */}
         <button
           onClick={() => setProfileModalOpen(true)}
@@ -687,6 +702,18 @@ export default function ChatPage() {
           </svg>
         </button>
       </header>
+
+      {/* ── 保存済み成果物モーダル ──────────────────────────── */}
+      {savedModalOpen && (
+        <SavedOutputsModal
+          onClose={() => setSavedModalOpen(false)}
+          onUse={(content) => {
+            setInput(content)
+            setSavedModalOpen(false)
+            inputRef.current?.focus()
+          }}
+        />
+      )}
 
       {/* ── 店舗設定モーダル ─────────────────────────────────── */}
       {profileModalOpen && (
@@ -1033,6 +1060,17 @@ export default function ChatPage() {
                 loading={loading}
                 onConsult={(s) => sendMessage(`「${s.title}」についてもっと詳しく教えてください。申請方法や必要書類も知りたいです。`)}
                 onAdjust={(prompt) => sendMessage(prompt)}
+                onSave={async (content) => {
+                  try {
+                    await fetch('/api/v1/saved', {
+                      method:  'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body:    JSON.stringify({ content, category: chatMode }),
+                    })
+                  } catch {
+                    // ignore: 保存失敗はサイレント（ボタン側でフィードバック表示）
+                  }
+                }}
               />
             ))}
 
@@ -1462,6 +1500,7 @@ function ChatBubble({
   loading = false,
   onConsult,
   onAdjust,
+  onSave,
 }: {
   message: Message
   isLast?: boolean
@@ -1469,9 +1508,12 @@ function ChatBubble({
   loading?: boolean
   onConsult?: (s: Subsidy) => void
   onAdjust?: (prompt: string) => void
+  onSave?: (content: string) => Promise<void>
 }) {
   const isUser = m.role === 'user'
   const [copied, setCopied] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+  const [saving, setSaving] = useState(false)
 
   async function handleCopy() {
     try {
@@ -1480,6 +1522,20 @@ function ChatBubble({
       setTimeout(() => setCopied(false), 2000)
     } catch {
       // ignore: 非対応ブラウザ / 権限なし
+    }
+  }
+
+  async function handleSave() {
+    if (!onSave || saving) return
+    setSaving(true)
+    try {
+      await onSave(m.content)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1552,9 +1608,36 @@ function ChatBubble({
             </span>
           )}
 
-          {/* コピーボタン — AIメッセージ・ストリーミング完了後のみ */}
+          {/* コピー / 保存ボタン — AIメッセージ・ストリーミング完了後のみ */}
           {!isUser && m.content && !m.isStreaming && (
-            <div className="flex justify-end mt-2 -mb-0.5">
+            <div className="flex justify-end items-center gap-1 mt-2 -mb-0.5">
+              {/* ★ 保存ボタン */}
+              {onSave && (
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-1 text-[11px] text-ink-400 hover:text-amber-500 px-1.5 py-0.5 rounded hover:bg-amber-50 transition-colors disabled:opacity-50"
+                  title="成果物を保存"
+                >
+                  {saved ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                      </svg>
+                      <span className="text-amber-500">保存済み</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                      </svg>
+                      <span>保存</span>
+                    </>
+                  )}
+                </button>
+              )}
+              {/* コピーボタン */}
               <button
                 onClick={handleCopy}
                 className="flex items-center gap-1 text-[11px] text-ink-400 hover:text-ink-600 px-1.5 py-0.5 rounded hover:bg-ink-100 transition-colors"
@@ -1725,6 +1808,163 @@ function SubsidyCard({
           この補助金で相談する
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── 保存済み成果物モーダル ────────────────────────────────────
+
+interface SavedOutputItem {
+  id:         string
+  title:      string | null
+  content:    string
+  category:   string | null
+  created_at: string
+}
+
+function SavedOutputsModal({
+  onClose,
+  onUse,
+}: {
+  onClose: () => void
+  onUse:   (content: string) => void
+}) {
+  const [items, setItems]       = useState<SavedOutputItem[]>([])
+  const [fetching, setFetching] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/v1/saved')
+        if (!res.ok) throw new Error('取得に失敗しました')
+        const { items: data }: { items: SavedOutputItem[] } = await res.json()
+        if (!cancelled) setItems(data)
+      } catch (e) {
+        if (!cancelled) setFetchError((e as Error).message)
+      } finally {
+        if (!cancelled) setFetching(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleDelete(id: string) {
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/v1/saved/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('削除に失敗しました')
+      setItems(prev => prev.filter(item => item.id !== id))
+    } catch {
+      // ignore: エラーはサイレント
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const categoryLabel = (cat: string | null) => {
+    if (cat === 'subsidy')  return '補助金相談'
+    if (cat === 'business') return '経営アシスト'
+    return cat ?? ''
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* オーバーレイ */}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+
+      {/* モーダル本体 */}
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-card border border-ink-100 flex flex-col max-h-[90vh]">
+
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-ink-100 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-sm">
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-ink-800">保存済み成果物</h2>
+              <p className="text-[11px] text-ink-400 leading-tight">「使う」で入力欄に挿入して再利用できます</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-ink-400 hover:text-ink-600 hover:bg-ink-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* コンテンツ */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+          {fetching ? (
+            <div className="flex justify-center py-12">
+              <span className="inline-block w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : fetchError ? (
+            <p className="text-xs text-red-500 text-center py-8">{fetchError}</p>
+          ) : items.length === 0 ? (
+            <div className="text-center py-12 text-ink-400">
+              <svg className="w-10 h-10 mx-auto mb-3 text-ink-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+              </svg>
+              <p className="text-sm">保存した成果物はまだありません</p>
+              <p className="text-xs mt-1">AI回答の下にある「保存」ボタンで追加できます</p>
+            </div>
+          ) : (
+            items.map(item => (
+              <div
+                key={item.id}
+                className="rounded-xl border border-ink-200 bg-white shadow-card p-4 space-y-2"
+              >
+                {/* タイトル + カテゴリ + 日付 */}
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink-800 leading-snug flex-1 min-w-0 truncate">
+                    {item.title ?? item.content.slice(0, 30)}
+                  </p>
+                  <span className="shrink-0 text-[10px] font-medium text-ink-400 bg-ink-50 border border-ink-200 rounded px-1.5 py-0.5">
+                    {categoryLabel(item.category)}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-400">
+                  {formatSessionDate(item.created_at)}
+                </p>
+                {/* 内容プレビュー */}
+                <p className="text-xs text-ink-600 line-clamp-3 leading-relaxed whitespace-pre-wrap">
+                  {item.content}
+                </p>
+                {/* 操作ボタン */}
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    disabled={deletingId === item.id}
+                    className="text-[11px] text-ink-400 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-40"
+                    title="削除"
+                  >
+                    {deletingId === item.id ? (
+                      <span className="inline-block w-3 h-3 border border-ink-400 border-t-transparent rounded-full animate-spin" />
+                    ) : '削除'}
+                  </button>
+                  <button
+                    onClick={() => onUse(item.content)}
+                    className="text-[11px] font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 hover:border-brand-300 px-3 py-1 rounded-lg transition-colors"
+                  >
+                    使う
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }
