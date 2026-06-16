@@ -575,7 +575,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-ink-50 overflow-hidden text-ink-900">
+    <div className="flex flex-col h-dvh bg-ink-50 overflow-hidden text-ink-900">
 
       {/* ── ヘッダー ────────────────────────────────────────── */}
       <header className="bg-white border-b border-ink-200 px-3 sm:px-4 py-2.5 flex items-center gap-2.5 shrink-0 shadow-panel z-10">
