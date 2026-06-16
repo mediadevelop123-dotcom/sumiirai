@@ -148,6 +148,53 @@ async function resizeImageToBase64(
   })
 }
 
+/**
+ * 主要補助金の既知エイリアス。
+ * カードのタイトル（公式名）にキーが含まれていれば、AIが使う短縮名を候補に加える。
+ */
+const SUBSIDY_ALIASES: { key: string; aliases: string[] }[] = [
+  { key: '持続化',         aliases: ['持続化補助金'] },
+  { key: 'IT導入',         aliases: ['IT導入補助金'] },
+  { key: 'ものづくり',     aliases: ['ものづくり補助金'] },
+  { key: '事業再構築',     aliases: ['事業再構築補助金'] },
+  { key: '省力化',         aliases: ['省力化補助金'] },
+  { key: '省エネ',         aliases: ['省エネ補助金'] },
+  { key: 'キャリアアップ', aliases: ['キャリアアップ助成金'] },
+  { key: '人材開発',       aliases: ['人材開発支援助成金'] },
+  { key: '事業承継',       aliases: ['事業承継・引継ぎ補助金', '事業承継補助金'] },
+]
+
+/**
+ * AI回答テキストに補助金が言及されているか判定する。
+ * カードのタイトルは公式の長い名称（例:「IT導入補助金（…デジタル化推進事業）」）だが、
+ * AIは短縮名（「IT導入補助金」「持続化補助金」）で書くため、タイトル完全一致では検出できない。
+ * 以下の候補名で部分一致を取る:
+ *   - フルタイトル / 「（）」前の核 / 「（）」内の略称 / 主要補助金の既知エイリアス
+ * 4文字未満の候補は誤検知を避けるため除外する。
+ */
+function isSubsidyMentioned(title: string, text: string): boolean {
+  if (!title || !text) return false
+  const candidates = new Set<string>()
+  candidates.add(title)
+
+  // 「（」「(」より前の核名称
+  const beforeParen = title.split(/[（(]/)[0].trim()
+  if (beforeParen) candidates.add(beforeParen)
+
+  // 「（…）」内の略称（複数対応）
+  const parenMatches = title.match(/[（(]([^）)]+)[）)]/g)
+  if (parenMatches) {
+    for (const m of parenMatches) candidates.add(m.replace(/[（()）]/g, '').trim())
+  }
+
+  // 既知エイリアス（タイトルにキーが含まれていれば短縮名を候補に追加）
+  for (const { key, aliases } of SUBSIDY_ALIASES) {
+    if (title.includes(key)) aliases.forEach(a => candidates.add(a))
+  }
+
+  return Array.from(candidates).some(c => c.length >= 4 && text.includes(c))
+}
+
 /** セッションの日時を「今日 HH:MM」「昨日」「N日前」「M/D」で表示 */
 function formatSessionDate(iso: string | null): string {
   if (!iso) return ''
@@ -550,7 +597,7 @@ export default function ChatPage() {
           if (capturedSources.length > 0 && assistantText) {
             const ids = new Set<string>(
               capturedSources
-                .filter(s => assistantText.includes(s.title))
+                .filter(s => isSubsidyMentioned(s.title, assistantText))
                 .map(s => s.id)
             )
             setMentionedIds(ids)
