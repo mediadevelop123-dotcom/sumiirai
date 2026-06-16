@@ -46,6 +46,8 @@ interface Message {
   content: string
   sources?: Subsidy[]
   isStreaming?: boolean
+  /** 添付画像（userメッセージのみ。businessモード・1枚まで） */
+  images?: { media_type: string; data: string }[]
 }
 
 interface Subsidy {
@@ -106,6 +108,45 @@ const STARTER_QUESTIONS = [
 ]
 
 // ─── ユーティリティ ──────────────────────────────────────────
+
+/**
+ * ファイルを canvas でリサイズ（長辺最大1024px）して JPEG base64 化。
+ * 戻り値: { media_type, data } — data は base64 本体（DataURL のヘッダーを除いたもの）。
+ */
+async function resizeImageToBase64(
+  file: File,
+  maxSide = 1024,
+): Promise<{ media_type: string; data: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string
+      const img = new Image()
+      img.onload = () => {
+        const { width, height } = img
+        const ratio = Math.min(1, maxSide / Math.max(width, height))
+        const w = Math.round(width  * ratio)
+        const h = Math.round(height * ratio)
+        const canvas = document.createElement('canvas')
+        canvas.width  = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { reject(new Error('canvas context not available')); return }
+        ctx.drawImage(img, 0, 0, w, h)
+        // JPEG 品質 0.85（トークン節約と画質のバランス）
+        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        // "data:image/jpeg;base64,..." → media_type と data に分離
+        const [header, data] = resizedDataUrl.split(',')
+        const media_type = header.replace('data:', '').replace(';base64', '')
+        resolve({ media_type, data })
+      }
+      img.onerror = () => reject(new Error('画像の読み込みに失敗しました'))
+      img.src = dataUrl
+    }
+    reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'))
+    reader.readAsDataURL(file)
+  })
+}
 
 /** セッションの日時を「今日 HH:MM」「昨日」「N日前」「M/D」で表示 */
 function formatSessionDate(iso: string | null): string {
@@ -189,6 +230,11 @@ export default function ChatPage() {
 
   // 保存済み成果物モーダル状態
   const [savedModalOpen, setSavedModalOpen] = useState(false)
+
+  // 画像添付状態（businessモードのみ使用）
+  const [attachedImage, setAttachedImage] = useState<{ media_type: string; data: string; previewUrl: string } | null>(null)
+  const [imageError, setImageError]       = useState<string | null>(null)
+  const imageInputRef                     = useRef<HTMLInputElement>(null)
 
   // 右パネル状態
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
@@ -387,7 +433,9 @@ export default function ChatPage() {
   // ── メッセージ送信 ─────────────────────────────────────────
 
   const sendMessage = useCallback(async (text: string, opts?: { industry?: string; prefecture?: string }) => {
-    if (!text.trim() || loading) return
+    // テキストが空の場合でも画像があれば送信可（指示文なし画像送信のケース）
+    if (!text.trim() && !attachedImage) return
+    if (loading) return
 
     // コンシェルジュフォームから渡された値があれば state に適用（次ターン以降のために）
     if (opts?.industry   !== undefined) setIndustry(opts.industry)
@@ -396,10 +444,20 @@ export default function ChatPage() {
     const effIndustry   = opts?.industry   ?? industry
     const effPrefecture = opts?.prefecture ?? prefecture
 
+    // 送信時点の画像スナップショット（送信後にクリアするため）
+    const imageToSend = attachedImage
+
+    // 画像のみ（テキスト空）の場合はデフォルト指示文を補う
+    // （API側が空テキストを弾くため & 空テキストブロックを避けるため）
+    const effText = text.trim()
+      || (imageToSend ? '添付した画像を使って、SNS投稿文など使える成果物を作成してください。' : '')
+
     const userMsg: Message = {
       id:      crypto.randomUUID(),
       role:    'user',
-      content: text.trim(),
+      content: effText,
+      // userバブルにサムネイルを表示するためimagesをセット
+      ...(imageToSend ? { images: [{ media_type: imageToSend.media_type, data: imageToSend.data }] } : {}),
     }
     const assistantId = crypto.randomUUID()
     const assistantMsg: Message = {
@@ -411,6 +469,9 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, userMsg, assistantMsg])
     setInput('')
+    // 送信後に画像をクリア
+    setAttachedImage(null)
+    setImageError(null)
     setLoading(true)
     setLatestSources([])            // 送信時にサイドバーをリセット
     setMentionedIds(new Set())      // AI言及IDもリセット
@@ -433,6 +494,10 @@ export default function ChatPage() {
           model,
           mode:       chatMode,
           sessionId:  sessionIdRef.current,
+          // 画像はbusinessモードのみ送信（subsidyはRAGがテキスト専用なので除外）
+          ...(imageToSend && chatMode === 'business'
+            ? { images: [{ media_type: imageToSend.media_type, data: imageToSend.data }] }
+            : {}),
         }),
         signal: abortCtrlRef.current.signal,
       })
@@ -516,13 +581,37 @@ export default function ChatPage() {
       abortCtrlRef.current = null
       inputRef.current?.focus()
     }
-  }, [loading, messages, prefecture, industry, model, chatMode, router, fetchSessions, setIndustry, setPrefecture])
+  }, [loading, messages, prefecture, industry, model, chatMode, router, fetchSessions, setIndustry, setPrefecture, attachedImage])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage(input)
     }
+  }
+
+  /** 画像ファイルを選択してリサイズ・base64化 */
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    // 同じファイルを再選択できるよう input をリセット
+    if (imageInputRef.current) imageInputRef.current.value = ''
+    if (!file) return
+    setImageError(null)
+    try {
+      const { media_type, data } = await resizeImageToBase64(file)
+      // プレビュー用の ObjectURL を生成（コンポーネントアンマウント時に revoke）
+      const previewUrl = URL.createObjectURL(file)
+      setAttachedImage({ media_type, data, previewUrl })
+    } catch (err) {
+      setImageError((err as Error).message || '画像の処理に失敗しました')
+    }
+  }
+
+  /** 添付画像を取り消す */
+  function removeAttachedImage() {
+    if (attachedImage) URL.revokeObjectURL(attachedImage.previewUrl)
+    setAttachedImage(null)
+    setImageError(null)
   }
 
   function clearChat() {
@@ -1092,7 +1181,73 @@ export default function ChatPage() {
               </svg>
               テンプレートから選ぶ
             </button>
+
+            {/* 画像プレビュー（businessモードで画像選択中のみ表示） */}
+            {chatMode === 'business' && attachedImage && (
+              <div className="mb-2 max-w-3xl mx-auto">
+                <div className="inline-flex items-center gap-2 bg-ink-50 border border-ink-200 rounded-xl px-3 py-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={attachedImage.previewUrl}
+                    alt="添付画像プレビュー"
+                    className="w-12 h-12 object-cover rounded-lg border border-ink-200"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-ink-600 font-medium truncate">画像を添付しました</p>
+                    <p className="text-[11px] text-ink-400">AIが画像を踏まえて回答します</p>
+                  </div>
+                  <button
+                    onClick={removeAttachedImage}
+                    className="p-1 rounded-lg text-ink-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                    title="画像を取り消す"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 画像エラー表示 */}
+            {chatMode === 'business' && imageError && (
+              <div className="mb-2 max-w-3xl mx-auto">
+                <p className="text-xs text-red-500 px-1">{imageError}</p>
+              </div>
+            )}
+
             <div className="flex gap-2 items-end max-w-3xl mx-auto">
+              {/* 画像添付ボタン（businessモードのみ） */}
+              {chatMode === 'business' && (
+                <>
+                  {/* hidden の file input */}
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageSelect}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={loading}
+                    className={`shrink-0 rounded-xl border px-3 text-ink-500 transition-all h-[58px] flex items-center justify-center
+                      ${attachedImage
+                        ? 'bg-brand-50 border-brand-300 text-brand-600'
+                        : 'bg-white border-ink-200 hover:border-brand-300 hover:text-brand-500 hover:bg-brand-50'
+                      }
+                      disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title="画像を添付（料理・メニュー写真など）"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+
               <textarea
                 ref={inputRef}
                 value={input}
@@ -1100,7 +1255,9 @@ export default function ChatPage() {
                 onKeyDown={handleKeyDown}
                 placeholder={chatMode === 'subsidy'
                   ? '補助金について質問してください … (Enter で送信 / Shift+Enter で改行)'
-                  : 'メール作成・SNS投稿・業務改善など、お手伝いします … (Enter で送信)'}
+                  : attachedImage
+                    ? '画像について指示してください（例：SNS投稿文を作って）'
+                    : 'メール作成・SNS投稿・業務改善など、お手伝いします … (Enter で送信)'}
                 rows={2}
                 disabled={loading}
                 className="flex-1 resize-none rounded-xl border border-ink-200 px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400
@@ -1109,7 +1266,7 @@ export default function ChatPage() {
               />
               <button
                 onClick={() => sendMessage(input)}
-                disabled={loading || !input.trim()}
+                disabled={loading || (!input.trim() && !attachedImage)}
                 className="shrink-0 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 px-5 text-sm font-semibold text-white
                            hover:from-brand-600 hover:to-brand-700 shadow-sm hover:shadow
                            disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
@@ -1567,7 +1724,20 @@ function ChatBubble({
             : 'bg-white border border-ink-200 text-ink-800 rounded-tl-sm shadow-card w-full'
           }`}>
           {isUser ? (
-            <>{m.content}</>
+            <>
+              {/* 添付画像サムネイル表示（userバブル内） */}
+              {m.images && m.images.length > 0 && (
+                <div className="mb-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:${m.images[0].media_type};base64,${m.images[0].data}`}
+                    alt="添付画像"
+                    className="max-w-[200px] max-h-[200px] object-cover rounded-lg border border-white/20"
+                  />
+                </div>
+              )}
+              {m.content && <>{m.content}</>}
+            </>
           ) : m.content ? (
             <div className="prose prose-sm max-w-none
                             prose-headings:font-bold prose-headings:text-ink-900 prose-headings:mt-3 prose-headings:mb-1.5

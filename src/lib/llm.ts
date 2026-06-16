@@ -29,9 +29,18 @@ import { AVAILABLE_MODELS, DEFAULT_MODEL_ID } from './llm-models'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
+/**
+ * Anthropic Bedrock のマルチモーダルコンテンツブロック型。
+ * テキストブロックと画像ブロックの Union。
+ */
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  /** テキストのみの場合は string、画像を含む場合は ContentBlock[] */
+  content: string | ContentBlock[]
 }
 
 export interface TokenUsage {
@@ -169,11 +178,16 @@ export async function chatStream(
   const encoder = new TextEncoder()
 
   // ── OpenAI: GPT-4o-mini ───────────────────────────────────────
+  // OpenAI 分岐では content が string のメッセージのみ渡す（画像はBedrock専用）
   if (provider === 'openai') {
     const client = getOpenAIClient()
+    const openaiMessages = messages.map(m => ({
+      role:    m.role,
+      content: typeof m.content === 'string' ? m.content : '',
+    }))
     const openaiStream = await client.chat.completions.create({
       model:          'gpt-4o-mini',
-      messages,
+      messages:       openaiMessages,
       stream:         true,
       stream_options: { include_usage: true },
       temperature:    0.3,
@@ -209,8 +223,14 @@ export async function chatStream(
   // ── Bedrock: Claude Haiku / Sonnet / Opus ────────────────────
   const client = getBedrockClient()
 
-  // Bedrock Anthropic API は system を別フィールドで受け取る
-  const systemContent = messages.find(m => m.role === 'system')?.content
+  // Bedrock Anthropic API は system を別フィールドで受け取る。
+  // systemメッセージは常にstring前提（画像はsystemに入れない）。
+  const systemMsg = messages.find(m => m.role === 'system')
+  const systemContent = systemMsg
+    ? (typeof systemMsg.content === 'string' ? systemMsg.content : '') as string
+    : undefined
+  // chatMessages は content が string でも ContentBlock[] でもそのまま渡す
+  // （Anthropic Bedrock API は両形式に対応）
   const chatMessages  = messages
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role, content: m.content }))
