@@ -29,6 +29,17 @@ import { BUSINESS_TEMPLATES } from '@/lib/business-templates'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
+/** 店舗プロフィール（API レスポンスの shape に合わせる） */
+interface StoreProfileData {
+  store_name:    string | null
+  industry:      string | null
+  prefecture:    string | null
+  city:          string | null
+  customer_base: string | null
+  tone:          string | null
+  notes:         string | null
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -167,6 +178,15 @@ export default function ChatPage() {
   const [mentionedIds,  setMentionedIds]  = useState<Set<string>>(new Set())
   const [isAdmin, setIsAdmin]             = useState(false)
 
+  // 店舗設定モーダル状態
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [profileDraft, setProfileDraft]         = useState<StoreProfileData>({
+    store_name: null, industry: null, prefecture: null, city: null,
+    customer_base: null, tone: null, notes: null,
+  })
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null)
+
   // 右パネル状態
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [rightTab, setRightTab]             = useState<'templates' | 'subsidies'>('templates')
@@ -181,12 +201,38 @@ export default function ChatPage() {
 
   const router          = useRouter()
 
-  // 業種・所在地を localStorage から復元（マウント時）
+  // 業種・所在地を初期化: DBプロフィール優先 → localStorage フォールバック
   useEffect(() => {
-    const savedIndustry   = localStorage.getItem('chat_industry')
-    const savedPrefecture = localStorage.getItem('chat_prefecture')
-    if (savedIndustry)   { setIndustry(savedIndustry); setShowConcierge(false) }
-    if (savedPrefecture) setPrefecture(savedPrefecture)
+    const initProfile = async () => {
+      try {
+        const res = await fetch('/api/v1/profile')
+        if (res.ok) {
+          const { profile }: { profile: StoreProfileData | null } = await res.json()
+          if (profile) {
+            // DB プロフィールがあれば industry/prefecture state に反映
+            setProfileDraft(profile)
+            if (profile.industry) {
+              setIndustry(profile.industry)
+              setShowConcierge(false)
+            }
+            if (profile.prefecture) setPrefecture(profile.prefecture)
+            // DB から取得できた場合は localStorage も同期しておく
+            if (profile.industry)   localStorage.setItem('chat_industry',   profile.industry)
+            if (profile.prefecture) localStorage.setItem('chat_prefecture', profile.prefecture)
+            return  // DB 優先: localStorage は参照しない
+          }
+        }
+      } catch {
+        // DB 取得失敗時は localStorage フォールバック
+      }
+      // localStorage フォールバック（未ログイン時・DB 未設定時）
+      const savedIndustry   = localStorage.getItem('chat_industry')
+      const savedPrefecture = localStorage.getItem('chat_prefecture')
+      if (savedIndustry)   { setIndustry(savedIndustry); setShowConcierge(false) }
+      if (savedPrefecture) setPrefecture(savedPrefecture)
+    }
+
+    initProfile()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 業種・所在地が変わったら localStorage に保存
@@ -616,6 +662,19 @@ export default function ChatPage() {
           </button>
         )}
 
+        {/* 店舗設定ボタン */}
+        <button
+          onClick={() => setProfileModalOpen(true)}
+          className="p-1.5 rounded-lg text-ink-400 hover:text-brand-600 hover:bg-brand-50 transition-colors shrink-0"
+          title="店舗設定"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
         <button
           onClick={handleLogout}
           className="p-1.5 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-100 transition-colors shrink-0"
@@ -627,6 +686,39 @@ export default function ChatPage() {
           </svg>
         </button>
       </header>
+
+      {/* ── 店舗設定モーダル ─────────────────────────────────── */}
+      {profileModalOpen && (
+        <StoreProfileModal
+          draft={profileDraft}
+          saving={profileSaving}
+          saveError={profileSaveError}
+          onClose={() => { setProfileModalOpen(false); setProfileSaveError(null) }}
+          onChange={setProfileDraft}
+          onSave={async () => {
+            setProfileSaving(true)
+            setProfileSaveError(null)
+            try {
+              const res = await fetch('/api/v1/profile', {
+                method:  'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(profileDraft),
+              })
+              if (!res.ok) throw new Error('保存に失敗しました')
+              const { profile }: { profile: StoreProfileData } = await res.json()
+              setProfileDraft(profile)
+              // industry/prefecture state も更新（即座にチャット送信に反映）
+              if (profile.industry)   { setIndustry(profile.industry);     localStorage.setItem('chat_industry',   profile.industry) }
+              if (profile.prefecture) { setPrefecture(profile.prefecture);  localStorage.setItem('chat_prefecture', profile.prefecture) }
+              setProfileModalOpen(false)
+            } catch (e) {
+              setProfileSaveError((e as Error).message)
+            } finally {
+              setProfileSaving(false)
+            }
+          }}
+        />
+      )}
 
       {/* ── メインエリア ─────────────────────────────────────── */}
       <div className="flex-1 flex min-h-0 relative">
@@ -931,11 +1023,15 @@ export default function ChatPage() {
             )}
 
             {/* メッセージ一覧 */}
-            {!sessionLoading && messages.map(msg => (
+            {!sessionLoading && messages.map((msg, idx) => (
               <ChatBubble
                 key={msg.id}
                 message={msg}
+                isLast={idx === messages.length - 1}
+                chatMode={chatMode}
+                loading={loading}
                 onConsult={(s) => sendMessage(`「${s.title}」についてもっと詳しく教えてください。申請方法や必要書類も知りたいです。`)}
+                onAdjust={(prompt) => sendMessage(prompt)}
               />
             ))}
 
@@ -1180,6 +1276,21 @@ export default function ChatPage() {
   )
 }
 
+// ─── 微調整アクション定義 ─────────────────────────────────────
+
+const ADJUST_BUSINESS = [
+  { label: 'カジュアルに', prompt: '直前の回答をもっとカジュアルな文体に書き直してください。' },
+  { label: '丁寧に',       prompt: '直前の回答をより丁寧・フォーマルな文体に書き直してください。' },
+  { label: '短く',         prompt: '直前の回答をより短く・簡潔にまとめてください。' },
+  { label: '別の案',       prompt: '別のアプローチで同じ内容を作り直してください。' },
+  { label: '絵文字を追加', prompt: '直前の回答に適切な絵文字を加えてください。' },
+]
+const ADJUST_SUBSIDY = [
+  { label: 'もっと詳しく', prompt: '補助金の申請方法や必要書類など、もっと詳しく教えてください。' },
+  { label: '簡潔に',       prompt: '直前の回答をもっと簡潔にまとめてください。' },
+  { label: '別の案',       prompt: '他に使えそうな補助金はありますか？' },
+]
+
 // ─── 履歴セッションアイテム ───────────────────────────────────
 
 function SessionItem({
@@ -1252,12 +1363,31 @@ function SessionItem({
 
 function ChatBubble({
   message: m,
+  isLast = false,
+  chatMode = 'business',
+  loading = false,
   onConsult,
+  onAdjust,
 }: {
   message: Message
+  isLast?: boolean
+  chatMode?: 'subsidy' | 'business'
+  loading?: boolean
   onConsult?: (s: Subsidy) => void
+  onAdjust?: (prompt: string) => void
 }) {
   const isUser = m.role === 'user'
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(m.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // ignore: 非対応ブラウザ / 権限なし
+    }
+  }
 
   return (
     <div className={`flex gap-3 max-w-3xl mx-auto w-full ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -1327,7 +1457,52 @@ function ChatBubble({
               <span className="inline-block w-1.5 h-1.5 bg-ink-300 rounded-full animate-bounce" />
             </span>
           )}
+
+          {/* コピーボタン — AIメッセージ・ストリーミング完了後のみ */}
+          {!isUser && m.content && !m.isStreaming && (
+            <div className="flex justify-end mt-2 -mb-0.5">
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-[11px] text-ink-400 hover:text-ink-600 px-1.5 py-0.5 rounded hover:bg-ink-100 transition-colors"
+                title="コピー"
+              >
+                {copied ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-green-500">コピー済み</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span>コピー</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* 微調整ボタン — 最後のAIメッセージ・ストリーミング完了後のみ表示 */}
+        {!isUser && isLast && !m.isStreaming && onAdjust && (
+          <div className="flex flex-wrap gap-1.5 mt-0.5">
+            {(chatMode === 'business' ? ADJUST_BUSINESS : ADJUST_SUBSIDY).map(({ label, prompt }) => (
+              <button
+                key={label}
+                onClick={() => onAdjust(prompt)}
+                disabled={loading}
+                className="text-[11px] px-2.5 py-1 rounded-full border border-ink-200 bg-white
+                           text-ink-500 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50
+                           disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* モバイル: AI メッセージ下に補助金カードをインライン表示 */}
         {!isUser && m.sources && m.sources.length > 0 && (
@@ -1456,6 +1631,196 @@ function SubsidyCard({
           この補助金で相談する
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── 店舗設定モーダル ──────────────────────────────────────────
+
+function StoreProfileModal({
+  draft,
+  saving,
+  saveError,
+  onClose,
+  onChange,
+  onSave,
+}: {
+  draft:      StoreProfileData
+  saving:     boolean
+  saveError:  string | null
+  onClose:    () => void
+  onChange:   (d: StoreProfileData) => void
+  onSave:     () => void
+}) {
+  // フィールド変更ヘルパー
+  const set = (key: keyof StoreProfileData, val: string) =>
+    onChange({ ...draft, [key]: val || null })
+
+  const inputCls =
+    'w-full text-sm border border-ink-200 rounded-lg px-3 py-2 bg-white text-ink-900 ' +
+    'focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors ' +
+    'placeholder:text-ink-400 disabled:bg-ink-50 disabled:text-ink-400'
+
+  const labelCls = 'block text-xs font-semibold text-ink-600 mb-1'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* オーバーレイ */}
+      <div
+        className="absolute inset-0 bg-black/30"
+        onClick={onClose}
+      />
+
+      {/* モーダル本体 */}
+      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-card border border-ink-100 p-6 space-y-4 overflow-y-auto max-h-[90vh]">
+
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-sm">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-ink-800">店舗設定</h2>
+              <p className="text-[11px] text-ink-400 leading-tight">登録するとAIが毎回自動で考慮します</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-ink-400 hover:text-ink-600 hover:bg-ink-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* 店名 */}
+        <div>
+          <label className={labelCls}>店名</label>
+          <input
+            type="text"
+            value={draft.store_name ?? ''}
+            onChange={e => set('store_name', e.target.value)}
+            placeholder="例: さくら美容室"
+            disabled={saving}
+            className={inputCls}
+          />
+        </div>
+
+        {/* 業種 */}
+        <div>
+          <label className={labelCls}>
+            業種 <span className="text-[10px] text-ink-400 font-normal">（補助金検索・AI回答に反映）</span>
+          </label>
+          <select
+            value={draft.industry ?? ''}
+            onChange={e => set('industry', e.target.value)}
+            disabled={saving}
+            className={inputCls}
+          >
+            <option value="">選択してください</option>
+            {INDUSTRY_LIST.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+        </div>
+
+        {/* 都道府県・市区町村 */}
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className={labelCls}>都道府県</label>
+            <select
+              value={draft.prefecture ?? ''}
+              onChange={e => set('prefecture', e.target.value)}
+              disabled={saving}
+              className={inputCls}
+            >
+              <option value="">全国</option>
+              {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className={labelCls}>市区町村</label>
+            <input
+              type="text"
+              value={draft.city ?? ''}
+              onChange={e => set('city', e.target.value)}
+              placeholder="例: 渋谷区"
+              disabled={saving}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        {/* 客層 */}
+        <div>
+          <label className={labelCls}>
+            客層メモ <span className="text-[10px] text-ink-400 font-normal">（AI が文章を作るときに参考にします）</span>
+          </label>
+          <input
+            type="text"
+            value={draft.customer_base ?? ''}
+            onChange={e => set('customer_base', e.target.value)}
+            placeholder="例: 30〜50代の女性が中心"
+            disabled={saving}
+            className={inputCls}
+          />
+        </div>
+
+        {/* 希望トーン */}
+        <div>
+          <label className={labelCls}>希望トーン</label>
+          <input
+            type="text"
+            value={draft.tone ?? ''}
+            onChange={e => set('tone', e.target.value)}
+            placeholder="例: 丁寧・温かみのある文体"
+            disabled={saving}
+            className={inputCls}
+          />
+        </div>
+
+        {/* 強み・特徴 */}
+        <div>
+          <label className={labelCls}>強み・特徴（自由メモ）</label>
+          <textarea
+            value={draft.notes ?? ''}
+            onChange={e => set('notes', e.target.value)}
+            placeholder="例: 10年以上の老舗、地域密着、スタッフ全員有資格者"
+            rows={2}
+            disabled={saving}
+            className={`${inputCls} resize-none`}
+          />
+        </div>
+
+        {/* エラー */}
+        {saveError && (
+          <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {saveError}
+          </p>
+        )}
+
+        {/* 保存ボタン */}
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="w-full py-2.5 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 text-sm font-semibold text-white
+                     hover:from-brand-600 hover:to-brand-700 shadow-sm hover:shadow
+                     disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
+                     transition-all flex items-center justify-center gap-2"
+        >
+          {saving ? (
+            <>
+              <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              保存中…
+            </>
+          ) : '保存する'}
+        </button>
+      </div>
     </div>
   )
 }

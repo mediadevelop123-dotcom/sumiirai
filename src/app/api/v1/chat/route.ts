@@ -23,6 +23,8 @@ import { getUser } from '@/lib/supabase-server'
 import { createSession, getSession, addMessage, ensureSessionTitle } from '@/lib/chat-store'
 import { detectViolations, buildCorrectionText } from '@/lib/security-guard'
 import { getIndustrySegment } from '@/lib/industry-prompts'
+import { getStoreProfile } from '@/lib/store-profile'
+import type { StoreProfile } from '@/lib/store-profile'
 
 // ─── 型定義 ──────────────────────────────────────────────────
 
@@ -164,11 +166,35 @@ export async function POST(req: Request) {
           sessionId = null
         }
 
+        // ── Step 0.5: 店舗プロフィール取得 (best-effort) ───────────
+        //   失敗してもチャット継続。subsidy/business 両モードで共用。
+        let storeProfile: StoreProfile | null = null
+        try {
+          storeProfile = await getStoreProfile(user.id)
+        } catch (e) {
+          console.warn('[chat] 店舗プロフィール取得失敗（継続）:', e)
+        }
+
         // ── business モード: RAGスキップ・専用プロンプト ────────────
         if (mode === 'business') {
-          const industryNote  = industry   ? `\n業種が「${industry}」に設定されています。例示や言い回しはこの業種に寄せると親切ですが、業種に直接関係しない依頼でも問題なく対応してください。` : ''
-          const prefectureNote = prefecture ? `\n所在地は「${prefecture}」です。地域性が関係する場合のみ反映してください。` : ''
-          const businessSystemPrompt = `あなたは対面サービス業（飲食・理美容・小売・宿泊・整骨院など）の経営者・スタッフの「業務全般」を支える、有能で柔軟なビジネスアシスタントです。日々の経営・業務・販促・人材・顧客対応など、仕事に関わる幅広い相談に対応します。${industryNote}${prefectureNote}
+          // body の値を優先し、未指定時はプロフィールで補完
+          const effIndustry   = industry   || storeProfile?.industry   || null
+          const effPrefecture = prefecture || storeProfile?.prefecture || null
+
+          const industryNote   = effIndustry   ? `\n業種が「${effIndustry}」に設定されています。例示や言い回しはこの業種に寄せると親切ですが、業種に直接関係しない依頼でも問題なく対応してください。` : ''
+          const prefectureNote = effPrefecture ? `\n所在地は「${effPrefecture}」です。地域性が関係する場合のみ反映してください。` : ''
+
+          // 店舗プロフィールが登録されていれば追加コンテキストを注入
+          const storeContextParts: string[] = []
+          if (storeProfile?.store_name)    storeContextParts.push(`店名【${storeProfile.store_name}】`)
+          if (storeProfile?.customer_base) storeContextParts.push(`客層【${storeProfile.customer_base}】`)
+          if (storeProfile?.tone)          storeContextParts.push(`希望トーン【${storeProfile.tone}】`)
+          if (storeProfile?.notes)         storeContextParts.push(`特徴【${storeProfile.notes}】`)
+          const storeContextNote = storeContextParts.length > 0
+            ? `\nお店の情報: ${storeContextParts.join('、')}。これらを踏まえて成果物を作成してください。`
+            : ''
+
+          const businessSystemPrompt = `あなたは対面サービス業（飲食・理美容・小売・宿泊・整骨院など）の経営者・スタッフの「業務全般」を支える、有能で柔軟なビジネスアシスタントです。日々の経営・業務・販促・人材・顧客対応など、仕事に関わる幅広い相談に対応します。${industryNote}${prefectureNote}${storeContextNote}
 
 【守備範囲 — 下記は例。これ以外でも"仕事に役立つこと"なら幅広く対応する】
 - 文章作成全般：メール・お知らせ・案内文・議事録・報告書・マニュアル・SNS投稿・POP/チラシ/広告コピー
@@ -283,8 +309,12 @@ export async function POST(req: Request) {
         send('sources', mergedList)
 
         // ── Step 4: LLM プロンプト構築 ───────────────────────────
-        const prefectureNote = prefecture
-          ? `ユーザー所在地: ${prefecture} ／ 対象地域「全国」の補助金も${prefecture}で申請可能`
+        // body の値を優先し、未指定時はプロフィールで補完（subsidy モード）
+        const effSubsidyIndustry   = industry   || storeProfile?.industry   || null
+        const effSubsidyPrefecture = prefecture || storeProfile?.prefecture || null
+
+        const prefectureNote = effSubsidyPrefecture
+          ? `ユーザー所在地: ${effSubsidyPrefecture} ／ 対象地域「全国」の補助金も${effSubsidyPrefecture}で申請可能`
           : `対象地域「全国」の補助金は日本全国で申請可能`
 
         const contextBlock = mergedList.length > 0
@@ -293,15 +323,15 @@ export async function POST(req: Request) {
           : `【補助金情報】\n現在の条件に合致する補助金が見つかりませんでした。` +
             `条件を変えてお試しいただくか、一般的なご相談として回答します。`
 
-        const industrySegment = getIndustrySegment(industry)
+        const industrySegment = getIndustrySegment(effSubsidyIndustry)
 
         // 既知情報をヒアリングから除外する動的プロンプト
-        const knownIndustry    = industry   ? `業種: ${industry}（確認済み・再度聞かない）` : null
-        const knownPrefecture  = prefecture ? `所在地: ${prefecture}（確認済み・再度聞かない）` : null
+        const knownIndustry    = effSubsidyIndustry   ? `業種: ${effSubsidyIndustry}（確認済み・再度聞かない）`   : null
+        const knownPrefecture  = effSubsidyPrefecture ? `所在地: ${effSubsidyPrefecture}（確認済み・再度聞かない）` : null
         const knownItems       = [knownIndustry, knownPrefecture].filter(Boolean)
         const unknownChecklist = [
-          !industry   ? '① 業種（例：飲食店、美容室、理容室、小売店、宿泊施設 など）' : null,
-          !prefecture ? '② 所在地（都道府県・できれば市区町村）'                     : null,
+          !effSubsidyIndustry   ? '① 業種（例：飲食店、美容室、理容室、小売店、宿泊施設 など）' : null,
+          !effSubsidyPrefecture ? '② 所在地（都道府県・できれば市区町村）'                     : null,
           '③ 何をしたいか・何に困っているか（例：設備導入、IT化、採用、店舗改装、省エネ など）',
         ].filter(Boolean)
 
