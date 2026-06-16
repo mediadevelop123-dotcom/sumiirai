@@ -231,6 +231,9 @@ export default function ChatPage() {
   // 保存済み成果物モーダル状態
   const [savedModalOpen, setSavedModalOpen] = useState(false)
 
+  // 保存済み補助金モーダル状態
+  const [savedSubsidiesModalOpen, setSavedSubsidiesModalOpen] = useState(false)
+
   // 画像添付状態（businessモードのみ使用）
   const [attachedImage, setAttachedImage] = useState<{ media_type: string; data: string; previewUrl: string } | null>(null)
   const [imageError, setImageError]       = useState<string | null>(null)
@@ -767,6 +770,18 @@ export default function ChatPage() {
           </svg>
         </button>
 
+        {/* 保存した補助金ボタン */}
+        <button
+          onClick={() => setSavedSubsidiesModalOpen(true)}
+          className="p-1.5 rounded-lg text-ink-400 hover:text-teal-600 hover:bg-teal-50 transition-colors shrink-0"
+          title="保存した補助金"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+        </button>
+
         {/* 店舗設定ボタン */}
         <button
           onClick={() => setProfileModalOpen(true)}
@@ -801,6 +816,13 @@ export default function ChatPage() {
             setSavedModalOpen(false)
             inputRef.current?.focus()
           }}
+        />
+      )}
+
+      {/* ── 保存した補助金モーダル ──────────────────────────── */}
+      {savedSubsidiesModalOpen && (
+        <SavedSubsidiesModal
+          onClose={() => setSavedSubsidiesModalOpen(false)}
         />
       )}
 
@@ -1158,6 +1180,29 @@ export default function ChatPage() {
                     })
                   } catch {
                     // ignore: 保存失敗はサイレント（ボタン側でフィードバック表示）
+                  }
+                }}
+                onBookmark={async (s) => {
+                  try {
+                    await fetch('/api/v1/saved-subsidies', {
+                      method:  'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body:    JSON.stringify({
+                        subsidyId: s.id,
+                        snapshot: {
+                          title:        s.title,
+                          url:          s.url,
+                          deadline:     s.deadline ?? null,
+                          max_amount:   s.max_amount ?? null,
+                          subsidy_rate: s.subsidy_rate ?? null,
+                          prefecture:   s.prefecture ?? null,
+                          catch_phrase: s.catch_phrase ?? null,
+                        },
+                        deadline: s.deadline ?? null,
+                      }),
+                    })
+                  } catch {
+                    // ignore: 保存失敗はサイレント
                   }
                 }}
               />
@@ -1553,6 +1598,29 @@ export default function ChatPage() {
                       <SubsidyCard
                         subsidy={s}
                         onConsult={() => sendMessage(`「${s.title}」についてもっと詳しく教えてください。申請方法や必要書類も知りたいです。`)}
+                        onBookmark={async (sub) => {
+                          try {
+                            await fetch('/api/v1/saved-subsidies', {
+                              method:  'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body:    JSON.stringify({
+                                subsidyId: sub.id,
+                                snapshot: {
+                                  title:        sub.title,
+                                  url:          sub.url,
+                                  deadline:     sub.deadline ?? null,
+                                  max_amount:   sub.max_amount ?? null,
+                                  subsidy_rate: sub.subsidy_rate ?? null,
+                                  prefecture:   sub.prefecture ?? null,
+                                  catch_phrase: sub.catch_phrase ?? null,
+                                },
+                                deadline: sub.deadline ?? null,
+                              }),
+                            })
+                          } catch {
+                            // ignore
+                          }
+                        }}
                       />
                     </div>
                   ))
@@ -1658,6 +1726,7 @@ function ChatBubble({
   onConsult,
   onAdjust,
   onSave,
+  onBookmark,
 }: {
   message: Message
   isLast?: boolean
@@ -1666,6 +1735,7 @@ function ChatBubble({
   onConsult?: (s: Subsidy) => void
   onAdjust?: (prompt: string) => void
   onSave?: (content: string) => Promise<void>
+  onBookmark?: (s: Subsidy) => Promise<void>
 }) {
   const isUser = m.role === 'user'
   const [copied, setCopied] = useState(false)
@@ -1863,8 +1933,8 @@ function ChatBubble({
                 subsidy={s}
                 compact
                 onConsult={onConsult ? () => onConsult(s) : undefined}
+                onBookmark={onBookmark ? () => onBookmark(s) : undefined}
               />
-
             ))}
           </div>
         )}
@@ -1879,13 +1949,31 @@ function SubsidyCard({
   subsidy: s,
   compact = false,
   onConsult,
+  onBookmark,
 }: {
   subsidy: Subsidy
   compact?: boolean
   onConsult?: () => void
+  onBookmark?: (s: Subsidy) => Promise<void>
 }) {
   const similarityPct = Math.round(s.similarity * 100)
   const iconCls = compact ? 'w-3 h-3' : 'w-3.5 h-3.5'
+  const [bookmarked, setBookmarked] = useState(false)
+  const [bookmarking, setBookmarking] = useState(false)
+
+  async function handleBookmark() {
+    if (!onBookmark || bookmarking) return
+    setBookmarking(true)
+    try {
+      await onBookmark(s)
+      setBookmarked(true)
+      setTimeout(() => setBookmarked(false), 2000)
+    } catch {
+      // ignore
+    } finally {
+      setBookmarking(false)
+    }
+  }
 
   return (
     <div className={`rounded-xl border border-ink-200 bg-white shadow-card
@@ -1950,17 +2038,44 @@ function SubsidyCard({
             関連度 {similarityPct}%
           </span>
         )}
-        <a
-          href={s.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`inline-flex items-center gap-0.5 text-brand-600 hover:text-brand-700 hover:underline font-medium ${compact ? 'text-[10px]' : 'text-xs'}`}
-        >
-          詳細を見る
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </a>
+        <div className="flex items-center gap-1.5">
+          {/* ブックマークボタン */}
+          {onBookmark && (
+            <button
+              onClick={handleBookmark}
+              disabled={bookmarking}
+              title="補助金を保存"
+              className={`inline-flex items-center gap-0.5 font-medium transition-colors disabled:opacity-40
+                ${bookmarked
+                  ? 'text-teal-600'
+                  : 'text-ink-400 hover:text-teal-600'
+                } ${compact ? 'text-[10px]' : 'text-xs'}`}
+            >
+              {bookmarked ? (
+                <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              ) : (
+                <svg className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              )}
+              {bookmarked ? '保存済み' : '保存'}
+            </button>
+          )}
+          <a
+            href={s.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-0.5 text-brand-600 hover:text-brand-700 hover:underline font-medium ${compact ? 'text-[10px]' : 'text-xs'}`}
+          >
+            詳細を見る
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        </div>
       </div>
 
       {/* 相談ボタン */}
@@ -2132,6 +2247,208 @@ function SavedOutputsModal({
                 </div>
               </div>
             ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 保存した補助金モーダル ───────────────────────────────────
+
+interface SavedSubsidyItem {
+  id:         string
+  subsidy_id: string | null
+  snapshot:   {
+    title:        string
+    url:          string
+    deadline?:    string | null
+    max_amount?:  number | null
+    subsidy_rate?: string | null
+    prefecture?:  string | null
+    catch_phrase?: string | null
+  }
+  deadline:    string | null
+  created_at:  string
+}
+
+function SavedSubsidiesModal({
+  onClose,
+}: {
+  onClose: () => void
+}) {
+  const [items, setItems]           = useState<SavedSubsidyItem[]>([])
+  const [fetching, setFetching]     = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/v1/saved-subsidies')
+        if (!res.ok) throw new Error('取得に失敗しました')
+        const { items: data }: { items: SavedSubsidyItem[] } = await res.json()
+        if (!cancelled) setItems(data)
+      } catch (e) {
+        if (!cancelled) setFetchError((e as Error).message)
+      } finally {
+        if (!cancelled) setFetching(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleDelete(id: string) {
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/v1/saved-subsidies/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('削除に失敗しました')
+      setItems(prev => prev.filter(item => item.id !== id))
+    } catch {
+      // ignore
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  /** 締切が今日から30日以内かどうか */
+  function isDeadlineSoon(deadline: string | null | undefined): boolean {
+    if (!deadline) return false
+    const d = new Date(deadline)
+    const now = new Date()
+    const diffDays = Math.ceil((d.getTime() - now.getTime()) / 86_400_000)
+    return diffDays >= 0 && diffDays <= 30
+  }
+
+  /** 締切の表示文字列 */
+  function formatDeadline(deadline: string | null | undefined): string {
+    if (!deadline) return '通年 / 次回公募'
+    const d = new Date(deadline)
+    return `締切: ${d.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}`
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* オーバーレイ */}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+
+      {/* モーダル本体 */}
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-card border border-ink-100 flex flex-col max-h-[90vh]">
+
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-ink-100 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shadow-sm">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-ink-800">保存した補助金</h2>
+              <p className="text-[11px] text-ink-400 leading-tight">詳細リンクや締切情報を後から確認できます</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-ink-400 hover:text-ink-600 hover:bg-ink-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* コンテンツ */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+          {fetching ? (
+            <div className="flex justify-center py-12">
+              <span className="inline-block w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : fetchError ? (
+            <p className="text-xs text-red-500 text-center py-8">{fetchError}</p>
+          ) : items.length === 0 ? (
+            <div className="text-center py-12 text-ink-400">
+              <svg className="w-10 h-10 mx-auto mb-3 text-ink-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+              <p className="text-sm">保存した補助金はまだありません</p>
+              <p className="text-xs mt-1">補助金カードの「保存」ボタンで追加できます</p>
+            </div>
+          ) : (
+            items.map(item => {
+              const snap = item.snapshot
+              const soon = isDeadlineSoon(snap.deadline)
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-ink-200 bg-white shadow-card p-4 space-y-2"
+                >
+                  {/* タイトル + 締切間近バッジ */}
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-semibold text-ink-800 leading-snug flex-1 min-w-0">
+                      {snap.title}
+                    </p>
+                    {soon && (
+                      <span className="shrink-0 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                        締切間近
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 補助率・上限額・締切・保存日 */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-500">
+                    {snap.max_amount != null && (
+                      <span className="font-medium text-ink-700">
+                        最大 {(snap.max_amount / 10000).toLocaleString()}万円
+                      </span>
+                    )}
+                    {snap.subsidy_rate && (
+                      <span>{snap.subsidy_rate}</span>
+                    )}
+                    {snap.prefecture && (
+                      <span>{snap.prefecture}</span>
+                    )}
+                    <span className={soon ? 'font-semibold text-red-500' : ''}>
+                      {formatDeadline(snap.deadline)}
+                    </span>
+                  </div>
+
+                  {/* 保存日 */}
+                  <p className="text-[11px] text-ink-400">
+                    保存: {formatSessionDate(item.created_at)}
+                  </p>
+
+                  {/* 操作ボタン */}
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      disabled={deletingId === item.id}
+                      className="text-[11px] text-ink-400 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors disabled:opacity-40"
+                      title="削除"
+                    >
+                      {deletingId === item.id ? (
+                        <span className="inline-block w-3 h-3 border border-ink-400 border-t-transparent rounded-full animate-spin" />
+                      ) : '削除'}
+                    </button>
+                    <a
+                      href={snap.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 hover:border-brand-300 px-3 py-1 rounded-lg transition-colors inline-flex items-center gap-1"
+                    >
+                      詳細を見る
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
+                </div>
+              )
+            })
           )}
         </div>
       </div>
