@@ -149,8 +149,23 @@ async function resizeImageToBase64(
 }
 
 /**
- * 主要補助金の既知エイリアス。
- * カードのタイトル（公式名）にキーが含まれていれば、AIが使う短縮名を候補に加える。
+ * 全角英数字（ＩＴ・ＤＸ・０〜９など）を半角に正規化する。
+ * jGrantsから取得した補助金タイトルが全角英数を含む場合でも
+ * AIが半角で書いた名称と一致させるために使用する。
+ * 全角括弧・全角スペースなど日本語表記として自然な文字は変換しない。
+ */
+function normalizeForMatch(s: string): string {
+  return s
+    // 全角英大文字 Ａ-Ｚ → A-Z
+    // 全角英小文字 ａ-ｚ → a-z
+    // 全角数字     ０-９ → 0-9
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+}
+
+/**
+ * 主要補助金の既知エイリアス（半角表記で統一）。
+ * カードのタイトルに normalizeForMatch 後のキーが含まれていれば、
+ * AIが使う短縮名を候補に加える。
  */
 const SUBSIDY_ALIASES: { key: string; aliases: string[] }[] = [
   { key: '持続化',         aliases: ['持続化補助金'] },
@@ -171,28 +186,34 @@ const SUBSIDY_ALIASES: { key: string; aliases: string[] }[] = [
  * 以下の候補名で部分一致を取る:
  *   - フルタイトル / 「（）」前の核 / 「（）」内の略称 / 主要補助金の既知エイリアス
  * 4文字未満の候補は誤検知を避けるため除外する。
+ * 比較前に全角英数字を半角に正規化するため、jGrantsデータが全角（ＩＴ等）でも一致する。
  */
 function isSubsidyMentioned(title: string, text: string): boolean {
   if (!title || !text) return false
+
+  // 比較前に全角英数 → 半角に正規化（jGrantsタイトルの全角表記ゆれ対策）
+  const normTitle = normalizeForMatch(title)
+  const normText  = normalizeForMatch(text)
+
   const candidates = new Set<string>()
-  candidates.add(title)
+  candidates.add(normTitle)
 
   // 「（」「(」より前の核名称
-  const beforeParen = title.split(/[（(]/)[0].trim()
+  const beforeParen = normTitle.split(/[（(]/)[0].trim()
   if (beforeParen) candidates.add(beforeParen)
 
   // 「（…）」内の略称（複数対応）
-  const parenMatches = title.match(/[（(]([^）)]+)[）)]/g)
+  const parenMatches = normTitle.match(/[（(]([^）)]+)[）)]/g)
   if (parenMatches) {
     for (const m of parenMatches) candidates.add(m.replace(/[（()）]/g, '').trim())
   }
 
-  // 既知エイリアス（タイトルにキーが含まれていれば短縮名を候補に追加）
+  // 既知エイリアス（正規化済みタイトルにキーが含まれていれば短縮名を候補に追加）
   for (const { key, aliases } of SUBSIDY_ALIASES) {
-    if (title.includes(key)) aliases.forEach(a => candidates.add(a))
+    if (normTitle.includes(key)) aliases.forEach(a => candidates.add(a))
   }
 
-  return Array.from(candidates).some(c => c.length >= 4 && text.includes(c))
+  return Array.from(candidates).some(c => c.length >= 4 && normText.includes(c))
 }
 
 /** セッションの日時を「今日 HH:MM」「昨日」「N日前」「M/D」で表示 */
@@ -595,12 +616,18 @@ export default function ChatPage() {
           )
           // AIが回答内で言及した補助金を特定してサイドバーに反映
           if (capturedSources.length > 0 && assistantText) {
-            const ids = new Set<string>(
-              capturedSources
-                .filter(s => isSubsidyMentioned(s.title, assistantText))
-                .map(s => s.id)
-            )
+            const matched = capturedSources.filter(s => isSubsidyMentioned(s.title, assistantText))
+            if (process.env.NODE_ENV === 'development') {
+              // eslint-disable-next-line no-console
+              console.log('[badge] capturedSources:', capturedSources.length, 'matched:', matched.length,
+                'titles:', matched.map(s => s.title))
+            }
+            const ids = new Set<string>(matched.map(s => s.id))
             setMentionedIds(ids)
+          } else if (process.env.NODE_ENV === 'development') {
+            // eslint-disable-next-line no-console
+            console.warn('[badge] capturedSources.length=', capturedSources.length,
+              'assistantText.length=', assistantText.length, '→ setMentionedIds をスキップ')
           }
           // 送信完了後: キャッシュ無効化 + セッション一覧更新
           if (sessionIdRef.current) sessionCacheRef.current.delete(sessionIdRef.current)
